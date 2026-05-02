@@ -1,0 +1,79 @@
+name: Build OnePlus Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      proprietary_repo:
+        description: '闭源驱动仓库地址'
+        required: true
+        default: 'https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8650'
+      proprietary_branch:
+        description: '闭源驱动仓库分支'
+        required: true
+        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
+      kernel_repo:
+        description: '内核源码仓库地址'
+        required: true
+        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8650'
+      kernel_branch:
+        description: '内核源码仓库分支'
+        required: true
+        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+      - name: Clone Proprietary Drivers
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
+            ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
+      - name: Move Folders
+        run: |
+          cd proprietary_drivers
+          if [ -d "vendor" ]; then
+            echo "Moving vendor to /..."
+            sudo mv vendor /
+          fi
+          if [ -d "kernel_platform" ]; then
+            echo "Moving kernel_platform to /..."
+            sudo mv kernel_platform /
+          else
+            echo "Error: 'kernel_platform' folder not found!"
+            ls -la
+            exit 1
+          fi
+      - name: Clone Kernel Source
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+            ${{ github.event.inputs.kernel_repo }} kernel_source
+      - name: Prepare Directory Structure
+        run: |
+          echo "Creating /kernel_platform/common..."
+          sudo mkdir -p /kernel_platform/common
+          echo "Moving kernel source to /kernel_platform/common..."
+          sudo mv kernel_source/* /kernel_platform/common/
+          sudo rm -rf kernel_source
+          echo "Final structure:"
+          ls -la /kernel_platform/
+          ls -la /kernel_platform/common/
+      - name: Build Kernel
+        run: |
+          sudo chown -R $USER:$USER /kernel_platform
+          cd /kernel_platform/common
+          echo "Running make gki_defconfig..."
+          make ARCH=arm64 LLVM=1 O=out gki_defconfig
+          echo "Starting compilation..."
+          make ARCH=arm64 LLVM=1 O=out -j8 Image
+      - name: Upload Kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image
+          path: /kernel_platform/common/out/arch/arm64/boot/Image
