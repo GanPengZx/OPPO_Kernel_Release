@@ -1,0 +1,24 @@
+name: LineageOS Kernel Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-kernel:
+    name: Build Kernel
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Android Kernel Build Action
+        uses: dabao1955/kernel_build_action@v1.10.0
+        with:
+          kernel-url: https://github.com/LineageOS/android_kernel_oneplus_sm6375
+          kernel-branch: lineage-23.2
+          config: gki_defconfig
+          arch: arm64
+          aosp-gcc: true
+          aosp-clang: true
+          android-version: 12
+          aosp-clang-version: r383902
