@@ -55,21 +55,51 @@ jobs:
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
 
-      - name: Prepare Kernel Directory Structure
+      -       - name: Prepare Kernel Directory Structure
         run: |
-          # 确定内核根目录名称
-          if [ -d "/Kernel_platform" ]; then
-            KERNEL_ROOT="/Kernel_platform"
-          elif [ -d "/Kernel" ]; then
-            KERNEL_ROOT="/Kernel"
+          # === 增强版查找逻辑 ===
+          # 1. 先在工作目录下找（不区分大小写）
+          shopt -s nocaseglob
+          if [ -d "proprietary_drivers/kernel" ]; then
+            DRIVER_DIR="proprietary_drivers/kernel"
+          elif [ -d "proprietary_drivers/Kernel" ]; then
+            DRIVER_DIR="proprietary_drivers/Kernel"
+          elif [ -d "proprietary_drivers/kernel_platform" ]; then
+            DRIVER_DIR="proprietary_drivers/kernel_platform"
+          elif [ -d "proprietary_drivers/Kernel_platform" ]; then
+            DRIVER_DIR="proprietary_drivers/Kernel_platform"
           else
-            echo "错误: 未找到 Kernel 或 Kernel_platform 目录"
+            echo "❌ 错误：在 proprietary_drivers 目录下未找到驱动文件夹！"
+            echo "当前目录内容："
+            ls -R proprietary_drivers
             exit 1
           fi
-          # 创建 common 文件夹并移动内核源码
+
+          # 2. 确定目标目录名并移动
+          if [[ "$DRIVER_DIR" == *"platform"* ]]; then
+            TARGET_DIR="/Kernel_platform"
+          else
+            TARGET_DIR="/Kernel"
+          fi
+
+          echo "✅ 正在移动驱动文件夹到 $TARGET_DIR ..."
+          sudo mv "$DRIVER_DIR" "$TARGET_DIR"
+
+          # 3. 再次检查是否移动成功
+          if [ ! -d "$TARGET_DIR" ]; then
+            echo "❌ 致命错误：移动失败！根目录下找不到 $TARGET_DIR"
+            echo "当前根目录内容："
+            ls / | grep -E "Kernel|kernel"
+            exit 1
+          fi
+
+          # 4. 继续原来的操作
+          KERNEL_ROOT="$TARGET_DIR"
           mkdir -p $KERNEL_ROOT/common
+          echo "📂 正在将内核源码移入 common 目录..."
           mv kernel_source/* $KERNEL_ROOT/common/
           rm -rf kernel_source
+
 
       - name: Build Kernel Configuration
         run: |
