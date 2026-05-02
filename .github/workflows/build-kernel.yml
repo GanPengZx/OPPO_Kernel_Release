@@ -1,4 +1,4 @@
-name: Build OPPO Kernel (Clang 11 + GCC 4.9)
+name: Build OPPO Kernel (GCC 4.9)
 
 on:
   workflow_dispatch:
@@ -35,44 +35,26 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz
 
       - name: Set swap to 20G
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 20
 
-      # 核心修改：使用Git克隆方式获取工具链
-      - name: Setup Toolchains (Clang 11 + GCC 4.9)
+      # 克隆工具链
+      - name: Setup Toolchains (GCC 4.9)
         run: |
           cd /tmp
           
-          # 1. 克隆 Clang 11 (来自 GitLab)
-          echo "====== 克隆 Clang 11 ======"
-          git clone --depth=1 -b 11.x https://gitlab.com/stormbreaker-project/google-clang clang-11
-          
-          # 2. 克隆 GCC 4.9 工具链
           echo "====== 克隆 GCC 4.9 (64位) ======"
           git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
           
           echo "====== 克隆 GCC 4.9 (32位) ======"
           git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
           
-          # 3. 设置环境变量
-          echo "====== 设置工具链路径 ======"
-          export PATH=$PATH:$(pwd)/clang-11/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin
-          
-          # 验证工具链
-          echo "Clang version:"
-          $(pwd)/clang-11/bin/clang --version || echo "Clang not found"
-          
-          echo "GCC 64-bit version:"
-          $(pwd)/gcc64/bin/aarch64-linux-android-gcc --version || echo "GCC 64-bit not found"
-          
-          echo "GCC 32-bit version:"
-          $(pwd)/gcc32/bin/arm-linux-androideabi-gcc --version || echo "GCC 32-bit not found"
-          
           echo "Toolchains setup finished."
+          /tmp/gcc64/bin/aarch64-linux-android-gcc --version
 
       - name: Clone Proprietary Drivers to /modules
         run: |
@@ -119,48 +101,35 @@ jobs:
             sudo chown -R $USER:$USER /vendor
           fi
 
-      - name: Build Kernel
+      - name: Build Kernel (GCC 4.9)
         run: |
           cd /kernel/msm-5.4
           
-          # 1. 引入工具链路径
-          export PATH=/tmp/clang-11/bin:/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
-          
-          # 2. 关键：设置 Clang 优化选项以减少内存占用
-          # -fno-semantic-interposition: 减少链接时的符号解析压力
-          # -O1: 降低优化等级，大幅减少内存消耗 (编译会慢一点，但能跑通)
-          export KCFLAGS="-fno-semantic-interposition -O1"
+          # 设置 GCC 工具链路径
+          export PATH=/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make -j$(nproc --all) \
+          make -j1 \
                ARCH=arm64 \
-               LLVM=1 \
-               LLVM_IAS=0 \
-               CC=clang \
-               LD=ld.lld \
-               CLANG_TRIPLE=aarch64-linux-gnu- \
+               LLVM=0 \
+               CC=aarch64-linux-android-gcc \
+               LD=aarch64-linux-android-ld \
                CROSS_COMPILE=aarch64-linux-android- \
                CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                ${{ github.event.inputs.defconfig }}
           
-          echo "Starting compilation (Limiting jobs to avoid OOM)..."
-          # 3. 关键：限制编译线程数为 4 (-j4)
-          # 即使你的机器有 8核16G，这里也必须限制，否则必挂
-          make -j4 \
+          echo "Starting compilation..."
+          make -j1 \
                ARCH=arm64 \
-               LLVM=1 \
-               LLVM_IAS=0 \
-               CC=clang \
-               LD=ld.lld \
-               CLANG_TRIPLE=aarch64-linux-gnu- \
+               LLVM=0 \
+               CC=aarch64-linux-android-gcc \
+               LD=aarch64-linux-android-ld \
                CROSS_COMPILE=aarch64-linux-android- \
                CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                Image
-
 
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /kernel/
-            
+          path: /kernel/msm-5.4/out/arch/arm64/boot/Image
