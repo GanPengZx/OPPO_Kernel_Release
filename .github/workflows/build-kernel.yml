@@ -29,6 +29,16 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+      # 0. 增加 Swap 空间 (防止内存溢出 OOM)
+      - name: Create Swap Space
+        run: |
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "Swap status:"
+          free -h
+
       # 1. 检出 Actions 脚本
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,10 +49,9 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev clang llvm lld
 
-      # 3. 下载并设置 AOSP GCC 4.9 (严格按你的路径)
+      # 3. 下载并设置 AOSP GCC 4.9
       - name: Setup AOSP GCC Toolchain
         run: |
-          # 创建目录并提权
           sudo mkdir -p /Gcc_64
           sudo mkdir -p /Gcc_32
           
@@ -58,33 +67,27 @@ jobs:
           
           echo "GCC Toolchain setup finished."
 
-      # 4. 克隆闭源驱动仓库到 /modules (你的第一步)
+      # 4. 克隆闭源驱动仓库到 /modules
       - name: Clone Proprietary Drivers to /modules
         run: |
-          # 删除可能存在的旧目录
           sudo rm -rf /modules
-          # 使用 sudo 克隆到 /modules
           sudo git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /modules
 
-      # 5. 克隆开源内核源码到 /kernel/msm-5.4 (你的第二步)
+      # 5. 克隆开源内核源码到 /kernel/msm-5.4
       - name: Clone Kernel Source to /kernel/msm-5.4
         run: |
-          # 删除可能存在的旧目录
           sudo rm -rf /kernel/msm-5.4
-          # 创建父目录
           sudo mkdir -p /kernel
-          # 使用 sudo 克隆到 /kernel/msm-5.4
           sudo git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} /kernel/msm-5.4
 
-      # 6. 移动文件夹 (严格执行你的命令)
+      # 6. 移动文件夹
       - name: Move Folders
         run: |
           echo "Current structure of /modules:"
           ls -R /modules
           
-          # 移动 /modules/vendor 到根目录
           if [ -d "/modules/vendor" ]; then
             echo "Moving /modules/vendor to /"
             sudo mv /modules/vendor /
@@ -93,7 +96,6 @@ jobs:
             exit 1
           fi
           
-          # 移动 techpack 内容
           if [ -d "/modules/kernel/msm-5.4/techpack" ]; then
             echo "Moving techpack files..."
             sudo mkdir -p /kernel/msm-5.4/techpack
@@ -103,43 +105,44 @@ jobs:
             exit 1
           fi
           
-          # 清理
           sudo rm -rf /modules
 
-      # 7. 修复权限 (关键步骤)
+      # 7. 修复权限
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
           sudo chmod -R 755 /kernel
-          # 确保 vendor 目录也有正确权限
           if [ -d "/vendor" ]; then
             sudo chown -R $USER:$USER /vendor
           fi
 
-      # 8. 编译内核 (进入 /kernel/msm-5.4)
+      # 8. 编译内核 (降低线程数 + 详细日志)
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
           
-          # 导出环境变量 (使用系统内置 Clang 18)
           export PATH=/usr/lib/llvm-18/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+          make -j4 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
                CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- \
-               ${{ github.event.inputs.defconfig }}
+               ${{ github.event.inputs.defconfig }} 2>&1 | tee defconfig.log
           
           echo "Starting compilation..."
-          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+          # 关键修改：-j4 防止爆内存；tee 保存完整日志
+          make -j4 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi-
+               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- 2>&1 | tee build.log
 
-      # 9. 上传产物
-      - name: Upload Kernel Image
+      # 9. 上传产物 (包含日志，方便排查)
+      - name: Upload Kernel Image and Logs
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: /kernel/msm-5.4/out/arch/arm64/boot/Image
+          name: kernel-build-artifacts
+          path: |
+            /kernel/msm-5.4/out/arch/arm64/boot/Image
+            /kernel/msm-5.4/defconfig.log
+            /kernel/msm-5.4/build.log
