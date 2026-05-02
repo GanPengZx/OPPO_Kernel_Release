@@ -1,0 +1,2 @@
+# OPPO_Kernel_Release
+用来编译OPPO部分机型的内核自动化脚本
