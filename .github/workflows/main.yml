@@ -69,44 +69,83 @@ jobs:
           ls -la /kernel_platform/
           ls -la /kernel_platform/common/
 
+      # =========================================================
+      # 核心改动 1：集成 KernelSU（适配你的目录结构）
+      # =========================================================
       - name: Integrate KernelSU
         run: |
           cd /kernel_platform/common
+          echo "Checking directory structure..."
+          ls -la
+          
+          # 根据 setup.sh 脚本的逻辑，它会在 drivers 目录下创建 kernelsu 链接
+          if [ -d "drivers" ]; then
+            echo "drivers directory found."
+          else
+            echo "Error: drivers directory not found!"
+            exit 1
+          fi
+          
           echo "Downloading and applying KernelSU patch..."
+          # 使用 main 分支（最新稳定版）
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
           echo "KernelSU integration finished."
+
+      # =========================================================
+      # 核心改动 2：构建内核（确保 KernelSU 配置生效）
+      # =========================================================
       - name: Build Kernel
         run: |
-          sudo chown -R $USER:$USER /kernel_platform
+          # 不需要 sudo，普通用户权限即可
           cd /kernel_platform/common
           
           echo "Running make gki_defconfig..."
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
+          
           echo "Applying KernelSU configurations..."
           CONFIG_FILE="out/.config"
+          
+          # 使用 sed 开启 KernelSU 必需的配置
+          # 注意：setup.sh 可能已经添加了这些，但我们再次确保
           sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $CONFIG_FILE
           sed -i 's/# CONFIG_KRETPROBES is not set/CONFIG_KRETPROBES=y/' $CONFIG_FILE
           sed -i 's/# CONFIG_HAVE_KPROBES is not set/CONFIG_HAVE_KPROBES=y/' $CONFIG_FILE
-          sed -i 's/# CONFIG_HAVE_KRETPROBES is not set/CONFIG_HAVE_KRETPBES=y/' $CONFIG_FILE
+          sed -i 's/# CONFIG_HAVE_KRETPROBES is not set/CONFIG_HAVE_KRETPROBES=y/' $CONFIG_FILE
           sed -i 's/CONFIG_MODULE_SIG_FORCE=y/# CONFIG_MODULE_SIG_FORCE is not set/' $CONFIG_FILE
+          
+          # 确保 KernelSU 自身是开启的
           if ! grep -q "CONFIG_KSU=y" $CONFIG_FILE; then
             echo "CONFIG_KSU=y" >> $CONFIG_FILE
           fi
+          
           echo "Starting compilation..."
-          make ARCH=arm64 LLVM=1 O=out -j8 Image
+          make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image 2>&1 | tee build.log
+
+      # =========================================================
+      # 核心改动 3：打包成 AnyKernel3 格式
+      # =========================================================
       - name: Package Kernel with AnyKernel3
         run: |
           cd /kernel_platform/common
           echo "Cloning AnyKernel3..."
           git clone https://github.com/osm0sis/AnyKernel3.git -b master
+          
+          # 复制内核镜像
           cp out/arch/arm64/boot/Image AnyKernel3/
+          
+          # 可选：复制 dtbo（如果设备需要）
+          if [ -f "out/arch/arm64/boot/dtbo.img" ]; then
+            cp out/arch/arm64/boot/dtbo.img AnyKernel3/
+          fi
+          
+          # 创建刷机包
           cd AnyKernel3
-          zip -r ../KernelSU-OnePlus.zip *
+          zip -r ../KernelSU-OnePlus-SM6375.zip *
           cd ..
           echo "Packaging finished."
 
       - name: Upload Kernel Flashable Zip
         uses: actions/upload-artifact@v4
         with:
-          name: KernelSU-OnePlus
-          path: /kernel_platform/common/KernelSU-OnePlus.zip
+          name: KernelSU-OnePlus-SM6375
+          path: /kernel_platform/common/KernelSU-OnePlus-SM6375.zip
