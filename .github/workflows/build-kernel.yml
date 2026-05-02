@@ -80,16 +80,36 @@ jobs:
             ${{ github.event.inputs.kernel_repo }} /tmp/modules
           sudo mv /tmp/modules /
 
-      # 7. 移动 modules 中的文件夹 (严格执行你的命令，使用 sudo)
+      # 7. 移动 Modules 文件夹 (修复路径错误)
       - name: Move Modules Folders
         run: |
-          # 确保目标目录存在
-          sudo mkdir -p /kernel/msm-5.4/techpack
-          
-          # 执行你的移动命令
-          sudo mv /modules/vendor /
-          sudo mv /modules/kernel/msm-5.4/techpack/* /kernel/msm-5.4/techpack/
-          
+          # 调试：打印当前目录结构，方便排查问题
+          echo "Current directory structure:"
+          ls -la /modules
+
+          # 尝试移动 vendor (兼容 vendor 在根目录或 modules 根目录的情况)
+          if [ -d "/modules/vendor" ]; then
+            echo "Found vendor in /modules, moving..."
+            sudo mv /modules/vendor /
+          elif [ -d "/modules/kernel/vendor" ]; then
+            echo "Found vendor in /modules/kernel, moving..."
+            sudo mv /modules/kernel/vendor /
+          else
+            echo "Warning: Vendor folder not found! Please check the repository structure."
+            exit 1
+          fi
+
+          # 移动 techpack
+          if [ -d "/modules/kernel/msm-5.4/techpack" ]; then
+            echo "Moving techpack..."
+            sudo mkdir -p /kernel/msm-5.4/techpack
+            sudo mv /modules/kernel/msm-5.4/techpack/* /kernel/msm-5.4/techpack/
+          else
+            echo "Warning: Techpack folder not found!"
+            exit 1
+          fi
+
+          # 清理
           sudo rm -rf /modules
 
       # 8. 修复权限 (关键步骤)
