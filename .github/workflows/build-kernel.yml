@@ -1,4 +1,4 @@
-name: Build OPPO Kernel
+name: Build OPPO Kernel (Pure Clang)
 
 on:
   workflow_dispatch:
@@ -29,62 +29,52 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      # 1. 检出 Actions 脚本
       - name: Checkout
         uses: actions/checkout@v4
-
-      # 2. 安装基础依赖 (使用系统内置 Clang 18)
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev clang llvm lld
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
 
-      # 3. 下载并设置 AOSP GCC 4.9 (严格按你的路径)
-      - name: Setup AOSP GCC Toolchain
+      - name: Set swap to 20G
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 20
+      - name: Setup Clang r383902b1
         run: |
-          # 创建目录并提权
-          sudo mkdir -p /Gcc_64
-          sudo mkdir -p /Gcc_32
-          
           cd /tmp
-          echo "Downloading GCC 4.9..."
-          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
-          sudo tar -xzf gcc64.tar.gz -C /Gcc_64/ --strip-components=1
-          rm gcc64.tar.gz
-
-          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
-          sudo tar -xzf gcc32.tar.gz -C /Gcc_32/ --strip-components=1
-          rm gcc32.tar.gz
+          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/e532342f30eadb954c96d19ca6a0edf89a5c65bc.tar.gz"
           
-          echo "GCC Toolchain setup finished."
-
-      # 4. 克隆闭源驱动仓库到 /modules (你的第一步)
+          echo "====== 开始下载 Clang r383902b1 (官方源) ======"
+          wget --progress=bar:force:noscroll -U "Mozilla/5.0" --content-disposition "$CLANG_URL"
+          TAR_FILE=$(ls -S *.tar.gz *.tgz 2>/dev/null | head -n 1)
+          if [ -z "$TAR_FILE" ]; then
+            echo "Error: Clang 压缩包下载失败！"
+            exit 1
+          fi
+          echo "====== 正在解压 Clang 工具链... ======"
+          sudo mkdir -p /opt/clang-r383902b1
+          sudo tar -xzf "$TAR_FILE" -C /opt/clang-r383902b1
+          rm -f "$TAR_FILE"
+          
+          echo "Clang setup finished."
+          /opt/clang-r383902b1/bin/clang --version
       - name: Clone Proprietary Drivers to /modules
         run: |
-          # 删除可能存在的旧目录
           sudo rm -rf /modules
-          # 使用 sudo 克隆到 /modules
           sudo git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /modules
-
-      # 5. 克隆开源内核源码到 /kernel/msm-5.4 (你的第二步)
       - name: Clone Kernel Source to /kernel/msm-5.4
         run: |
-          # 删除可能存在的旧目录
           sudo rm -rf /kernel/msm-5.4
-          # 创建父目录
           sudo mkdir -p /kernel
-          # 使用 sudo 克隆到 /kernel/msm-5.4
           sudo git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} /kernel/msm-5.4
-
-      # 6. 移动文件夹 (严格执行你的命令)
       - name: Move Folders
         run: |
           echo "Current structure of /modules:"
           ls -R /modules
           
-          # 移动 /modules/vendor 到根目录
           if [ -d "/modules/vendor" ]; then
             echo "Moving /modules/vendor to /"
             sudo mv /modules/vendor /
@@ -93,7 +83,6 @@ jobs:
             exit 1
           fi
           
-          # 移动 techpack 内容
           if [ -d "/modules/kernel/msm-5.4/techpack" ]; then
             echo "Moving techpack files..."
             sudo mkdir -p /kernel/msm-5.4/techpack
@@ -103,38 +92,45 @@ jobs:
             exit 1
           fi
           
-          # 清理
           sudo rm -rf /modules
-
-      # 7. 修复权限 (关键步骤)
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
           sudo chmod -R 755 /kernel
-          # 确保 vendor 目录也有正确权限
           if [ -d "/vendor" ]; then
             sudo chown -R $USER:$USER /vendor
           fi
-      - name: Set swap to 20G
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 20
 
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
-          export PATH=/usr/lib/llvm-18/bin:$PATH
+          
+          # 引入 Clang 路径
+          export PATH=/opt/clang-r383902b1/bin:$PATH
+          
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 \
+          make -j$(nproc --all) \
+               ARCH=arm64 \
+               LLVM=1 \
+               LLVM_IAS=0 \        # 关键：OPPO 内核汇编太老，必须关掉集成汇编器
+               CC=clang \
+               LD=ld.lld \
                CLANG_TRIPLE=aarch64-linux-gnu- \
-               CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- \
+               CROSS_COMPILE="" \    # 关键：设为空，强制不使用 GCC
                ${{ github.event.inputs.defconfig }}
+          
           echo "Starting compilation..."
-          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 \
+          make -j$(nproc --all) \
+               ARCH=arm64 \
+               LLVM=1 \
+               LLVM_IAS=0 \
+               CC=clang \
+               LD=ld.lld \
                CLANG_TRIPLE=aarch64-linux-gnu- \
-               CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- Image
+               CROSS_COMPILE="" \
+               Image
+
+      # 9. 上传产物
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
