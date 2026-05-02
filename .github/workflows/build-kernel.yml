@@ -33,66 +33,56 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 安装基础依赖
-      - name: Install Base Dependencies
+      # 2. 安装基础依赖 (使用系统内置 Clang 18)
+      - name: Install Dependencies
         run: |
           sudo apt update
           sudo apt install -y wget git tar build-essential bc flex bison libssl-dev \
-                           libncurses-dev xz-utils cpio rsync lzop \
-                           gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-                           gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+                               libncurses-dev xz-utils cpio rsync lzop \
+                               clang llvm lld \
+                               gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+                               gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
 
-      # 3. 下载并设置 Clang (严格按你的路径)
-      - name: Setup Clang
-        run: |
-          sudo mkdir -p /Clang
-          cd /Clang
-          echo "Downloading Clang..."
-          wget --tries=0 --waitretry=30 -q https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-22.04.tar.xz
-          tar -xf clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-22.04.tar.xz --strip-components=1
-          rm clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-22.04.tar.xz
-          echo "Clang setup finished."
-
-      # 4. 下载并设置 GCC (严格按你的路径)
+      # 3. 下载并设置 GCC 4.9 工具链 (路径严格按你的要求)
       - name: Setup GCC Toolchain
         run: |
           sudo mkdir -p /Gcc_64
           cd /Gcc_64
-          echo "Downloading GCC 64-bit..."
+          echo "Downloading GCC 4.9 (64-bit)..."
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
           tar -xzf gcc64.tar.gz --strip-components=1
           rm gcc64.tar.gz
           
           sudo mkdir -p /Gcc_32
           cd /Gcc_32
-          echo "Downloading GCC 32-bit..."
+          echo "Downloading GCC 4.9 (32-bit)..."
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
           tar -xzf gcc32.tar.gz --strip-components=1
           rm gcc32.tar.gz
           
           echo "GCC Toolchain setup finished."
 
-      # 5. 克隆闭源驱动仓库 (到临时目录)
+      # 4. 克隆闭源驱动仓库 (到临时目录)
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /tmp/proprietary
 
-      # 6. 移动闭源文件夹到根目录 (严格执行你的命令)
+      # 5. 移动闭源文件夹到根目录 (严格执行你的命令)
       - name: Move Proprietary Folders to Root
         run: |
           sudo mv /tmp/proprietary/kernel /
           sudo mv /tmp/proprietary/vendor /
           sudo rm -rf /tmp/proprietary
 
-      # 7. 克隆开源内核源码到 /modules
+      # 6. 克隆开源内核源码到 /modules
       - name: Clone Kernel Source to /modules
         run: |
           sudo rm -rf /modules
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} /modules
 
-      # 8. 移动 modules 中的文件夹 (严格执行你的命令)
+      # 7. 移动 modules 中的文件夹 (严格执行你的命令)
       - name: Move Modules Folders
         run: |
           # 确保目标目录存在
@@ -104,19 +94,19 @@ jobs:
           
           sudo rm -rf /modules
 
-      # 9. 修复权限
+      # 8. 修复权限
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
           sudo chmod -R 755 /kernel
 
-      # 10. 编译内核 (严格执行你的命令)
+      # 9. 编译内核 (使用系统内置 Clang 18，严格执行你的命令)
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4/
           
-          # 导出环境变量 (严格按你的路径)
-          export PATH=/Clang/bin:$PATH
+          # 导出环境变量 (使用系统内置 Clang 18)
+          export PATH=/usr/lib/llvm-18/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
           make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
@@ -131,7 +121,7 @@ jobs:
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
                CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi-
 
-      # 11. 上传产物
+      # 10. 上传产物
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
