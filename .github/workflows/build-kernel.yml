@@ -1,9 +1,8 @@
-name: Build OPPO Kernel (Coolapk Method)
+name: Build OPPO Kernel
 
 on:
   workflow_dispatch:
     inputs:
-      # 默认分支已设为正确的 sm6375 分支
       proprietary_repo:
         description: '闭源驱动仓库地址'
         required: true
@@ -33,96 +32,113 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
 
-      # 第一步：拉取闭源驱动
+      # 步骤1: 克隆闭源驱动仓库
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
 
-      - name: Move Driver Folders to Root
+      # 步骤2: 处理闭源驱动目录
+      - name: Process Proprietary Drivers
         run: |
-          # 1. 移动 vendor 文件夹
-          if [ -d "proprietary_drivers/vendor" ]; then
-            echo "Moving vendor folder..."
-            sudo mv proprietary_drivers/vendor /
+          cd proprietary_drivers
+          
+          # 移动 vendor 文件夹到根目录
+          if [ -d "vendor" ]; then
+            echo "Moving vendor folder to /..."
+            sudo mv vendor /
           fi
           
-          # 2. 移动内核平台文件夹 (酷安教程里叫 Kernel_platform)
-          if [ -d "proprietary_drivers/Kernel_platform" ]; then
-            echo "Moving Kernel_platform folder..."
-            sudo mv proprietary_drivers/Kernel_platform /
-          fi
+          # 查找并移动 Kernel 或 Kernel_platform 文件夹
+          KERNEL_DIR=$(find . -maxdepth 1 -type d \( -iname "Kernel" -o -iname "Kernel_platform" \) | head -n 1)
           
-          # 3. 移动内核文件夹 (以防万一)
-          if [ -d "proprietary_drivers/Kernel" ]; then
-            echo "Moving Kernel folder..."
-            sudo mv proprietary_drivers/Kernel /
+          if [ -n "$KERNEL_DIR" ]; then
+            echo "Found driver directory: $KERNEL_DIR"
+            sudo mv "$KERNEL_DIR" /
+          else
+            echo "Error: No Kernel or Kernel_platform directory found!"
+            exit 1
           fi
-          
-          # 清理残留
-          rm -rf proprietary_drivers
 
-      # 第二步：拉取内核源码
+      # 步骤3: 克隆内核源码仓库
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
 
-      - name: Prepare Directory Structure (Key Step!)
+      # 步骤4: 关键步骤 - 准备目录结构
+      - name: Prepare Directory Structure (Key Step)
         run: |
-          # 酷安教程核心步骤：把源码文件夹重命名为 common
-          # 首先判断根目录有没有 Kernel 或 Kernel_platform
+          # 确定内核根目录
           if [ -d "/Kernel" ]; then
-            echo "Found /Kernel, renaming to /Kernel/common..."
-            sudo mv /Kernel /Kernel_temp
-            sudo mkdir -p /Kernel/common
-            sudo mv /Kernel_temp/* /Kernel/common/
-            sudo rm -rf /Kernel_temp
-            
+            KERNEL_ROOT="/Kernel"
           elif [ -d "/Kernel_platform" ]; then
-            echo "Found /Kernel_platform, renaming to /Kernel_platform/common..."
-            sudo mv /Kernel_platform /Kernel_platform_temp
-            sudo mkdir -p /Kernel_platform/common
-            sudo mv /Kernel_platform_temp/* /Kernel_platform/common/
-            sudo rm -rf /Kernel_platform_temp
+            KERNEL_ROOT="/Kernel_platform"
           else
-            echo "Error: Could not find Kernel base directory!"
+            echo "Error: Kernel root directory not found!"
             exit 1
           fi
+          
+          echo "Using kernel root: $KERNEL_ROOT"
+          
+          # 创建 common 文件夹
+          echo "Creating common folder inside $KERNEL_ROOT..."
+          sudo mkdir -p $KERNEL_ROOT/common
+          
+          # 将内核源码移动到 common 文件夹
+          echo "Moving kernel source to $KERNEL_ROOT/common..."
+          sudo mv kernel_source/* $KERNEL_ROOT/common/
+          sudo rm -rf kernel_source
+          
+          # 验证目录结构
+          echo "Final directory structure:"
+          ls -la $KERNEL_ROOT/
+          echo "Common directory contents:"
+          ls -la $KERNEL_ROOT/common/
 
-      # 第三步：编译 (完全复刻酷安指令)
+      # 步骤5: 编译内核配置
       - name: Build Kernel Configuration
         run: |
-          # 动态获取路径
-          if [ -d "/Kernel/common" ]; then
-            cd /Kernel/common
-          elif [ -d "/Kernel_platform/common" ]; then
-            cd /Kernel_platform/common
+          # 确定内核根目录
+          if [ -d "/Kernel" ]; then
+            KERNEL_ROOT="/Kernel"
+          elif [ -d "/Kernel_platform" ]; then
+            KERNEL_ROOT="/Kernel_platform"
+          else
+            echo "Error: Kernel root directory not found!"
+            exit 1
           fi
           
-          echo "Current directory: $(pwd)"
-          echo "Running make gki_defconfig..."
+          # 进入 common 目录
+          cd $KERNEL_ROOT/common
           
-          # 执行编译配置
+          echo "Running make gki_defconfig..."
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
 
-      - name: Compile Kernel Image
+      # 步骤6: 编译内核
+      - name: Compile Kernel
         run: |
-          # 动态获取路径
-          if [ -d "/Kernel/common" ]; then
-            cd /Kernel/common
-          elif [ -d "/Kernel_platform/common" ]; then
-            cd /Kernel_platform/common
+          # 确定内核根目录
+          if [ -d "/Kernel" ]; then
+            KERNEL_ROOT="/Kernel"
+          elif [ -d "/Kernel_platform" ]; then
+            KERNEL_ROOT="/Kernel_platform"
+          else
+            echo "Error: Kernel root directory not found!"
+            exit 1
           fi
           
+          # 进入 common 目录
+          cd $KERNEL_ROOT/common
+          
           echo "Starting compilation..."
-          # 使用 nproc 自动获取CPU核心数加速编译
           make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
 
-      # 第四步：上传产物
+      # 步骤7: 上传内核镜像
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
-          name: A1_5G_Kernel_Image
+          name: kernel-image
           path: |
             /Kernel*/out/arch/arm64/boot/Image
+            /kernel*/out/arch/arm64/boot/Image
