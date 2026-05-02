@@ -83,27 +83,26 @@ jobs:
           if [ -d "/vendor" ]; then
             sudo chown -R $USER:$USER /vendor
           fi
-
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
           export PATH=/usr/lib/llvm-18/bin:$PATH
-          
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
           make -j4 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
                CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- \
-               ${{ github.event.inputs.defconfig }}
-          
+               ${{ github.event.inputs.defconfig }} 2>&1 | tee defconfig.log
           echo "Starting compilation..."
           make -j4 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi-
-
-      - name: Upload Kernel Image
+               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- 2>&1 | tee build.log
+      - name: Upload Kernel Image and Logs
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-image
-          path: /kernel/msm-5.4/out/arch/arm64/boot/Image
+          name: kernel-build-artifacts
+          path: |
+            /kernel/msm-5.4/out/arch/arm64/boot/Image
+            /kernel/msm-5.4/defconfig.log
+            /kernel/msm-5.4/build.log
