@@ -31,114 +31,53 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
-
-      # 步骤1: 克隆闭源驱动仓库
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
-
-      # 步骤2: 处理闭源驱动目录
-      - name: Process Proprietary Drivers
+      - name: Move Folders
         run: |
           cd proprietary_drivers
-          
-          # 移动 vendor 文件夹到根目录
           if [ -d "vendor" ]; then
-            echo "Moving vendor folder to /..."
+            echo "Moving vendor to /..."
             sudo mv vendor /
           fi
-          
-          # 查找并移动 Kernel 或 Kernel_platform 文件夹
-          KERNEL_DIR=$(find . -maxdepth 1 -type d \( -iname "Kernel" -o -iname "Kernel_platform" \) | head -n 1)
-          
-          if [ -n "$KERNEL_DIR" ]; then
-            echo "Found driver directory: $KERNEL_DIR"
-            sudo mv "$KERNEL_DIR" /
+          if [ -d "kernel" ]; then
+            echo "Moving kernel to /..."
+            sudo mv kernel /
           else
-            echo "Error: No Kernel or Kernel_platform directory found!"
+            echo "Error: 'kernel' folder not found!"
+            ls -la
             exit 1
           fi
-
-      # 步骤3: 克隆内核源码仓库
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
-
-      # 步骤4: 关键步骤 - 准备目录结构
-      - name: Prepare Directory Structure (Key Step)
+      - name: Prepare Directory Structure
         run: |
-          # 确定内核根目录
-          if [ -d "/Kernel" ]; then
-            KERNEL_ROOT="/Kernel"
-          elif [ -d "/Kernel_platform" ]; then
-            KERNEL_ROOT="/Kernel_platform"
-          else
-            echo "Error: Kernel root directory not found!"
-            exit 1
-          fi
+          echo "Creating /kernel/common..."
+          sudo mkdir -p /kernel/common
           
-          echo "Using kernel root: $KERNEL_ROOT"
-          
-          # 创建 common 文件夹
-          echo "Creating common folder inside $KERNEL_ROOT..."
-          sudo mkdir -p $KERNEL_ROOT/common
-          
-          # 将内核源码移动到 common 文件夹
-          echo "Moving kernel source to $KERNEL_ROOT/common..."
-          sudo mv kernel_source/* $KERNEL_ROOT/common/
+          echo "Moving kernel source to /kernel/common..."
+          sudo mv kernel_source/* /kernel/common/
           sudo rm -rf kernel_source
           
-          # 验证目录结构
-          echo "Final directory structure:"
-          ls -la $KERNEL_ROOT/
-          echo "Common directory contents:"
-          ls -la $KERNEL_ROOT/common/
-
-      # 步骤5: 编译内核配置
-      - name: Build Kernel Configuration
+          echo "Final structure:"
+          ls -la /kernel/
+          ls -la /kernel/common/
+      - name: Build Kernel
         run: |
-          # 确定内核根目录
-          if [ -d "/Kernel" ]; then
-            KERNEL_ROOT="/Kernel"
-          elif [ -d "/Kernel_platform" ]; then
-            KERNEL_ROOT="/Kernel_platform"
-          else
-            echo "Error: Kernel root directory not found!"
-            exit 1
-          fi
-          
-          # 进入 common 目录
-          cd $KERNEL_ROOT/common
+          cd /kernel/common
           
           echo "Running make gki_defconfig..."
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
-
-      # 步骤6: 编译内核
-      - name: Compile Kernel
-        run: |
-          # 确定内核根目录
-          if [ -d "/Kernel" ]; then
-            KERNEL_ROOT="/Kernel"
-          elif [ -d "/Kernel_platform" ]; then
-            KERNEL_ROOT="/Kernel_platform"
-          else
-            echo "Error: Kernel root directory not found!"
-            exit 1
-          fi
-          
-          # 进入 common 目录
-          cd $KERNEL_ROOT/common
           
           echo "Starting compilation..."
           make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
 
-      # 步骤7: 上传内核镜像
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: |
-            /Kernel*/out/arch/arm64/boot/Image
-            /kernel*/out/arch/arm64/boot/Image
+          path: /kernel/common/out/arch/arm64/boot/Image
