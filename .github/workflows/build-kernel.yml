@@ -1,4 +1,5 @@
 name: Build OPPO Kernel
+
 on:
   workflow_dispatch:
     inputs:
@@ -22,44 +23,77 @@ on:
         description: '内核配置文件'
         required: true
         default: 'gki_defconfig'
+
 jobs:
   build:
     runs-on: ubuntu-24.04
+
     steps:
+      # 1. 检出 Actions 脚本
       - name: Checkout
         uses: actions/checkout@v4
+
+      # 2. 安装基础依赖 (不再安装系统 clang)
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev clang llvm lld
+          sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev wget
+
+      # 3. 下载并设置 AOSP GCC 4.9
       - name: Setup AOSP GCC Toolchain
         run: |
           sudo mkdir -p /Gcc_64
           sudo mkdir -p /Gcc_32
+          
           cd /tmp
           echo "Downloading GCC 4.9..."
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
           sudo tar -xzf gcc64.tar.gz -C /Gcc_64/ --strip-components=1
           rm gcc64.tar.gz
+
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
           sudo tar -xzf gcc32.tar.gz -C /Gcc_32/ --strip-components=1
           rm gcc32.tar.gz
+          
           echo "GCC Toolchain setup finished."
+
+      # 4. 下载并设置 AOSP Clang r383902 (使用你提供的官方地址)
+      - name: Setup AOSP Clang r383902
+        run: |
+          cd /tmp
+          echo "Downloading Clang r383902..."
+          # 使用你提供的官方下载地址
+          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/f71cc7fa68ac644595257d6fdebc2e543cb7041c.tar.gz -O clang-r383902.tar.gz
+          
+          echo "Extracting Clang..."
+          sudo mkdir -p /opt/clang-r383902
+          sudo tar -xzf clang-r383902.tar.gz -C /opt/clang-r383902
+          rm clang-r383902.tar.gz
+          
+          echo "Verifying Clang version:"
+          /opt/clang-r383902/bin/clang --version
+
+      # 5. 克隆闭源驱动仓库到 /modules
       - name: Clone Proprietary Drivers to /modules
         run: |
           sudo rm -rf /modules
           sudo git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /modules
+
+      # 6. 克隆开源内核源码到 /kernel/msm-5.4
       - name: Clone Kernel Source to /kernel/msm-5.4
         run: |
           sudo rm -rf /kernel/msm-5.4
           sudo mkdir -p /kernel
           sudo git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} /kernel/msm-5.4
+
+      # 7. 移动文件夹
       - name: Move Folders
         run: |
           echo "Current structure of /modules:"
           ls -R /modules
+          
           if [ -d "/modules/vendor" ]; then
             echo "Moving /modules/vendor to /"
             sudo mv /modules/vendor /
@@ -67,6 +101,7 @@ jobs:
             echo "Error: /modules/vendor not found!"
             exit 1
           fi
+          
           if [ -d "/modules/kernel/msm-5.4/techpack" ]; then
             echo "Moving techpack files..."
             sudo mkdir -p /kernel/msm-5.4/techpack
@@ -75,7 +110,10 @@ jobs:
             echo "Error: /modules/kernel/msm-5.4/techpack not found!"
             exit 1
           fi
+          
           sudo rm -rf /modules
+
+      # 8. 修复权限
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
@@ -83,21 +121,30 @@ jobs:
           if [ -d "/vendor" ]; then
             sudo chown -R $USER:$USER /vendor
           fi
+
+      # 9. 编译内核 (使用 Clang r383902)
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
-          export PATH=/usr/lib/llvm-18/bin:$PATH
+          
+          # 导出环境变量 (使用你指定的 Clang r383902)
+          export PATH=/opt/clang-r383902/bin:$PATH
+          export LD_LIBRARY_PATH=/opt/clang-r383902/lib64:$LD_LIBRARY_PATH
+          
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make -j4 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+          make -j8 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
                CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- \
                ${{ github.event.inputs.defconfig }} 2>&1 | tee defconfig.log
+          
           echo "Starting compilation..."
-          make -j4 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+          make -j8 CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
                CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- 2>&1 | tee build.log
+
+      # 10. 上传产物
       - name: Upload Kernel Image and Logs
         uses: actions/upload-artifact@v4
         with:
