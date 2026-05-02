@@ -29,13 +29,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git ccache automake flex lzop bison \
-            gperf build-essential zip curl zlib1g-dev g++-multilib \
-            libxml2-utils bzip2 libncurses5-dev libncurses5 libc6-dev-i386 \
-            x11proto-core-dev libx11-dev python3 gzip libgl1-mesa-dev \
-            libxml2-utils unzip squashfs-tools pngcrush optipng bc \
-            imagemagick liblz4-tool libssl-dev clang llvm lld
+          sudo apt update && sudo apt install build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
 
       - name: Clone Proprietary Drivers
         run: |
