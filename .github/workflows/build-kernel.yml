@@ -1,0 +1,94 @@
+name: Build OPPO Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      proprietary_repo:
+        description: '闭源驱动仓库地址 (例如: https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375)'
+        required: true
+        default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375'
+      proprietary_branch:
+        description: '闭源驱动仓库分支 (例如: oppo/sm6375_t_13.1.0_oppo_a1_5g)'
+        required: true
+        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
+      kernel_repo:
+        description: '内核源码仓库地址 (例如: https://github.com/oppo-source/android_kernel_oppo_sm6375)'
+        required: true
+        default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375'
+      kernel_branch:
+        description: '内核源码仓库分支 (例如: oppo/sm6375_t_13.1.0_oppo_a1_5g)'
+        required: true
+        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ccache automake flex lzop bison \
+            gperf build-essential zip curl zlib1g-dev g++-multilib \
+            libxml2-utils bzip2 libncurses5-dev libncurses5 libc6-dev-i386 \
+            x11proto-core-dev libx11-dev python3 gzip libgl1-mesa-dev \
+            libxml2-utils unzip squashfs-tools pngcrush optipng bc \
+            imagemagick liblz4-tool libssl-dev clang llvm lld
+
+      - name: Clone Proprietary Drivers
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
+            ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
+
+      - name: Move Driver Folders to Root
+        run: |
+          cd proprietary_drivers
+          # 检查并移动 vendor 文件夹
+          if [ -d "vendor" ]; then
+            sudo mv vendor /
+          fi
+          # 检查并移动 Kernel 或 Kernel_platform 文件夹
+          if [ -d "Kernel_platform" ]; then
+            sudo mv Kernel_platform /
+          elif [ -d "Kernel" ]; then
+            sudo mv Kernel /
+          fi
+
+      - name: Clone Kernel Source
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+            ${{ github.event.inputs.kernel_repo }} kernel_source
+
+      - name: Prepare Kernel Directory Structure
+        run: |
+          # 确定内核根目录名称
+          if [ -d "/Kernel_platform" ]; then
+            KERNEL_ROOT="/Kernel_platform"
+          elif [ -d "/Kernel" ]; then
+            KERNEL_ROOT="/Kernel"
+          else
+            echo "错误: 未找到 Kernel 或 Kernel_platform 目录"
+            exit 1
+          fi
+          # 创建 common 文件夹并移动内核源码
+          mkdir -p $KERNEL_ROOT/common
+          mv kernel_source/* $KERNEL_ROOT/common/
+          rm -rf kernel_source
+
+      - name: Build Kernel Configuration
+        run: |
+          cd /Kernel_platform || cd /Kernel
+          make ARCH=arm64 LLVM=1 O=out gki_defconfig
+
+      - name: Compile Kernel
+        run: |
+          cd /Kernel_platform || cd /Kernel
+          make ARCH=arm64 LLVM=1 O=out -j8 Image
+
+      - name: Upload Kernel Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image
+          path: /Kernel_platform/out/arch/arm64/boot/Image || /Kernel/out/arch/arm64/boot/Image
