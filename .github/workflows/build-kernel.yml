@@ -30,7 +30,6 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
       - name: Clone Proprietary Drivers
         run: |
@@ -70,10 +69,9 @@ jobs:
           sudo chown -R $USER:$USER /kernel
           cd /kernel/common
           echo "Running make gki_defconfig..."
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=out gki_defconfig
+          make ARCH=arm64 LLVM=1 O=out gki_defconfig
           echo "Starting compilation..."
-          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- O=out -j$(nproc) Image \
-            KCFLAGS="-Wno-strict-prototypes -Wno-error=strict-prototypes"
+          make ARCH=arm64 LLVM=1 O=out -j8 Image
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
