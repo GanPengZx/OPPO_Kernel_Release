@@ -91,18 +91,14 @@ jobs:
           rm -rf kernel_source
 
       - name: Build Kernel Configuration
+        working-directory: /Kernel/common  # 强制在 common 目录下执行
         run: |
-          # 自动检测内核根目录
-          KERNEL_ROOT=$(find / -maxdepth 1 -type d \( -iname "Kernel*" \) | head -n 1)
-          cd $KERNEL_ROOT
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
 
       - name: Compile Kernel
+        working-directory: /Kernel/common  # 强制在 common 目录下执行
         run: |
-          KERNEL_ROOT=$(find / -maxdepth 1 -type d \( -iname "Kernel*" \) | head -n 1)
-          cd $KERNEL_ROOT
           make ARCH=arm64 LLVM=1 O=out -j8 Image
-
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
