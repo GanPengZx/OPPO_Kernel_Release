@@ -71,10 +71,9 @@ jobs:
           sudo chown -R $USER:$USER /kernel
           cd /kernel/common
           echo "Running make gki_defconfig..."
-          make ARCH=arm64 LLVM=1 O=out gki_defconfig
+          make ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC=clang O=out gki_defconfig
           echo "Starting compilation..."
-          make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
-
+          make ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC=clang O=out -j$(nproc) Image
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
