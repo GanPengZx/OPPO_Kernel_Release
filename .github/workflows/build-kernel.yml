@@ -89,16 +89,21 @@ jobs:
           mkdir -p $KERNEL_ROOT/common
           mv kernel_source/* $KERNEL_ROOT/common/
           rm -rf kernel_source
-
       - name: Build Kernel Configuration
-        working-directory: /Kernel/common  # 强制在 common 目录下执行
         run: |
+          # 1. 强制进入源码目录
+          cd /Kernel/common
+          
+          # 2. 生成配置
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
 
       - name: Compile Kernel
-        working-directory: /Kernel/common  # 强制在 common 目录下执行
         run: |
-          make ARCH=arm64 LLVM=1 O=out -j8 Image
+          # 1. 强制进入源码目录
+          cd /Kernel/common
+          
+          # 2. 开始编译
+          make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
