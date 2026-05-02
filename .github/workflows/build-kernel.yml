@@ -1,4 +1,4 @@
-name: Build OPPO Kernel (GCC 4.9)
+name: Build OPPO Kernel (Clang 11 + GCC 4.9)
 
 on:
   workflow_dispatch:
@@ -37,15 +37,18 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz
 
-      - name: Set swap to 20G
+      - name: Set swap to 10G
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 20
+          swap-size-gb: 10
 
-      # 克隆工具链
-      - name: Setup Toolchains (GCC 4.9)
+      # 克隆工具链：Clang 11 和 GCC 4.9
+      - name: Setup Toolchains (Clang 11 + GCC 4.9)
         run: |
           cd /tmp
+          
+          echo "====== 克隆 Clang 11 ======"
+          git clone --depth=1 -b 11.x https://gitlab.com/stormbreaker-project/google-clang clang-11
           
           echo "====== 克隆 GCC 4.9 (64位) ======"
           git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
@@ -54,7 +57,7 @@ jobs:
           git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
           
           echo "Toolchains setup finished."
-          /tmp/gcc64/bin/aarch64-linux-android-gcc --version
+          /tmp/clang-11/bin/clang --version
 
       - name: Clone Proprietary Drivers to /modules
         run: |
@@ -101,19 +104,21 @@ jobs:
             sudo chown -R $USER:$USER /vendor
           fi
 
-      - name: Build Kernel (GCC 4.9)
+      - name: Build Kernel (Clang 11 + GCC 4.9)
         run: |
           cd /kernel/msm-5.4
           
-          # 设置 GCC 工具链路径
-          export PATH=/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
+          # 设置工具链路径：Clang 11 在前，GCC 4.9 在后
+          export PATH=/tmp/clang-11/bin:/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
           make -j1 \
                ARCH=arm64 \
-               LLVM=0 \
-               CC=aarch64-linux-android-gcc \
-               LD=aarch64-linux-android-ld \
+               LLVM=1 \
+               LLVM_IAS=1 \
+               CC=clang \
+               LD=ld.lld \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=aarch64-linux-android- \
                CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                ${{ github.event.inputs.defconfig }}
@@ -121,9 +126,11 @@ jobs:
           echo "Starting compilation..."
           make -j1 \
                ARCH=arm64 \
-               LLVM=0 \
-               CC=aarch64-linux-android-gcc \
-               LD=aarch64-linux-android-ld \
+               LLVM=1 \
+               LLVM_IAS=1 \
+               CC=clang \
+               LD=ld.lld \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=aarch64-linux-android- \
                CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                Image
