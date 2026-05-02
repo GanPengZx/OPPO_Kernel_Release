@@ -20,87 +20,133 @@ on:
         required: true
         default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
       defconfig:
-        description: '内核配置文件名称（如 gki_defconfig、vendor/xxx_defconfig）'
-        required: false
+        description: '内核配置文件 (例如: gki_defconfig 或 vendor/reno10_defconfig)'
+        required: true
         default: 'gki_defconfig'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
+      # 1. 检出 Actions 脚本
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      # 2. 安装基础依赖 (教程中提到的必备软件)
+      - name: Install Base Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+          sudo apt install -y build-essential bc flex bison git curl wget tar xz-utils cpio rsync lzop libncurses-dev libssl-dev
 
-      # 1. 克隆闭源驱动仓库
+      # 3. 【核心】下载并设置 AOSP 工具链 (严格对应教程版本)
+      - name: Setup AOSP Toolchain
+        run: |
+          # 创建教程指定的目录结构 /home/ubuntu
+          sudo mkdir -p /home/ubuntu
+          sudo chown -R $USER:$USER /home/ubuntu
+          
+          cd /home/ubuntu
+          
+          # 下载 Clang r377782b (教程指定版本)
+          echo "Downloading Clang r377782b..."
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r377782b.tar.gz -O clang.tar.gz
+          mkdir -p Clang
+          tar -xzf clang.tar.gz -C Clang/ --strip-components=1
+          rm clang.tar.gz
+          
+          # 下载 GCC 4.9 (教程指定版本)
+          echo "Downloading GCC 4.9..."
+          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
+          mkdir -p Gcc_64
+          tar -xzf gcc64.tar.gz -C Gcc_64/ --strip-components=1
+          rm gcc64.tar.gz
+          
+          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
+          mkdir -p Gcc_32
+          tar -xzf gcc32.tar.gz -C Gcc_32/ --strip-components=1
+          rm gcc32.tar.gz
+          
+          echo "Toolchain setup finished."
+
+      # 4. 【核心】导出环境变量 (严格复刻教程中的 export 命令)
+      - name: Export Environment Variables
+        run: |
+          echo "Exporting environment variables..."
+          # 对应教程: export PATH=/home/ubuntu/Clang/bin:$PATH
+          echo "export PATH=/home/ubuntu/Clang/bin:$PATH" >> $GITHUB_ENV
+          
+          # 对应教程: CROSS_COMPILE 等变量
+          echo "export CROSS_COMPILE=/home/ubuntu/Gcc_64/bin/aarch64-linux-android-" >> $GITHUB_ENV
+          echo "export CROSS_COMPILE_ARM32=/home/ubuntu/Gcc_32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
+          
+          # 刷新环境
+          source $GITHUB_ENV
+
+      # 5. 克隆闭源驱动仓库
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
 
-      # 2. 移动文件夹（OPPO 专属逻辑）
-      - name: Move Folders
+      # 6. 移动闭源文件夹 (OPPO 专属逻辑)
+      - name: Move Proprietary Folders
         run: |
           cd proprietary_drivers
           
-          # 移动 vendor 到根目录
+          # 移动 vendor
           if [ -d "vendor" ]; then
             echo "Moving vendor to /..."
             sudo mv vendor /
           fi
           
-          # 移动 kernel 到根目录（OPPO 闭源仓库的核心文件夹）
+          # 移动 kernel (教程逻辑：将 modules 中的 kernel 移出)
           if [ -d "kernel" ]; then
             echo "Moving kernel to /..."
             sudo mv kernel /
           else
-            echo "Error: 'kernel' folder not found in proprietary repo!"
+            echo "Error: 'kernel' folder not found!"
             ls -la
             exit 1
           fi
+          
+          cd ..
+          sudo rm -rf proprietary_drivers
 
-      # 3. 克隆内核源码
+      # 7. 克隆内核源码 (直接放入 /kernel)
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
-
-      # 4. 准备目录结构（OPPO 专属：在 kernel 下创建 common）
-      - name: Prepare Directory Structure
-        run: |
-          echo "Creating /kernel/common..."
-          sudo mkdir -p /kernel/common
-          
-          echo "Moving kernel source to /kernel/common..."
-          sudo mv kernel_source/* /kernel/common/
+            
+          echo "Moving source to /kernel..."
+          sudo mv kernel_source/* /kernel/
           sudo rm -rf kernel_source
           
-          echo "Final structure:"
+          echo "Kernel structure:"
           ls -la /kernel/
-          ls -la /kernel/common/
 
-      # 5. 编译内核
+      # 8. 【核心】编译内核 (100% 复刻教程中的 make 命令)
       - name: Build Kernel
         run: |
-          # 修复权限
+          # 修复权限 (对应教程中 /home/ubuntu 的权限)
           sudo chown -R $USER:$USER /kernel
           
-          # 进入编译目录
-          cd /kernel/common
+          # 进入源码目录 (对应教程中的 /home/ubuntu/kernel/msm-5.4/)
+          cd /kernel
           
-          echo "Running make ${{ github.event.inputs.defconfig }}..."
-          make ARCH=arm64 LLVM=1 O=out ${{ github.event.inputs.defconfig }}
+          echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
+          # 对应教程第一条 make 命令 (生成配置)
+          make O=out ${{ github.event.inputs.defconfig }}
           
           echo "Starting compilation..."
-          make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
+          # 对应教程第二条 make 命令 (开始编译)
+          # 注意：这里去掉了 CC="clang"，因为已经在 PATH 中设置了 clang，且教程中未显式写出 CC=
+          make O=out -j$(nproc --all) Image
 
-      # 6. 上传产物
+      # 9. 上传产物
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /kernel/common/out/arch/arm64/boot/Image
+          path: /kernel/out/arch/arm64/boot/Image
