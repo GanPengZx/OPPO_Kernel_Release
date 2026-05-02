@@ -1,4 +1,4 @@
-name: Build OPPO Kernel (Pure Clang)
+name: Build OPPO Kernel (Clang 11 + GCC 4.9)
 
 on:
   workflow_dispatch:
@@ -31,6 +31,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Install Dependencies
         run: |
           sudo apt update
@@ -40,36 +41,52 @@ jobs:
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 20
-      - name: Setup Clang r383902b1
+
+      # 核心修改：使用Git克隆方式获取工具链
+      - name: Setup Toolchains (Clang 11 + GCC 4.9)
         run: |
           cd /tmp
-          CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/e532342f30eadb954c96d19ca6a0edf89a5c65bc.tar.gz"
           
-          echo "====== 开始下载 Clang r383902b1 (官方源) ======"
-          wget --progress=bar:force:noscroll -U "Mozilla/5.0" --content-disposition "$CLANG_URL"
-          TAR_FILE=$(ls -S *.tar.gz *.tgz 2>/dev/null | head -n 1)
-          if [ -z "$TAR_FILE" ]; then
-            echo "Error: Clang 压缩包下载失败！"
-            exit 1
-          fi
-          echo "====== 正在解压 Clang 工具链... ======"
-          sudo mkdir -p /opt/clang-r383902b1
-          sudo tar -xzf "$TAR_FILE" -C /opt/clang-r383902b1
-          rm -f "$TAR_FILE"
+          # 1. 克隆 Clang 11 (来自 GitLab)
+          echo "====== 克隆 Clang 11 ======"
+          git clone --depth=1 -b 11.x https://gitlab.com/stormbreaker-project/google-clang clang-11
           
-          echo "Clang setup finished."
-          /opt/clang-r383902b1/bin/clang --version
+          # 2. 克隆 GCC 4.9 工具链
+          echo "====== 克隆 GCC 4.9 (64位) ======"
+          git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
+          
+          echo "====== 克隆 GCC 4.9 (32位) ======"
+          git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
+          
+          # 3. 设置环境变量
+          echo "====== 设置工具链路径 ======"
+          export PATH=$PATH:$(pwd)/clang-11/bin:$(pwd)/gcc64/bin:$(pwd)/gcc32/bin
+          
+          # 验证工具链
+          echo "Clang version:"
+          $(pwd)/clang-11/bin/clang --version || echo "Clang not found"
+          
+          echo "GCC 64-bit version:"
+          $(pwd)/gcc64/bin/aarch64-linux-android-gcc --version || echo "GCC 64-bit not found"
+          
+          echo "GCC 32-bit version:"
+          $(pwd)/gcc32/bin/arm-linux-androideabi-gcc --version || echo "GCC 32-bit not found"
+          
+          echo "Toolchains setup finished."
+
       - name: Clone Proprietary Drivers to /modules
         run: |
           sudo rm -rf /modules
           sudo git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /modules
+
       - name: Clone Kernel Source to /kernel/msm-5.4
         run: |
           sudo rm -rf /kernel/msm-5.4
           sudo mkdir -p /kernel
           sudo git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} /kernel/msm-5.4
+
       - name: Move Folders
         run: |
           echo "Current structure of /modules:"
@@ -93,6 +110,7 @@ jobs:
           fi
           
           sudo rm -rf /modules
+
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
@@ -105,18 +123,19 @@ jobs:
         run: |
           cd /kernel/msm-5.4
           
-          # 引入 Clang 路径
-          export PATH=/opt/clang-r383902b1/bin:$PATH
+          # 设置工具链路径（使用刚刚克隆的工具链）
+          export PATH=/tmp/clang-11/bin:/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
           make -j$(nproc --all) \
                ARCH=arm64 \
                LLVM=1 \
-               LLVM_IAS=0 \        # 关键：OPPO 内核汇编太老，必须关掉集成汇编器
+               LLVM_IAS=0 \
                CC=clang \
                LD=ld.lld \
                CLANG_TRIPLE=aarch64-linux-gnu- \
-               CROSS_COMPILE="" \    # 关键：设为空，强制不使用 GCC
+               CROSS_COMPILE=aarch64-linux-android- \
+               CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                ${{ github.event.inputs.defconfig }}
           
           echo "Starting compilation..."
@@ -127,12 +146,13 @@ jobs:
                CC=clang \
                LD=ld.lld \
                CLANG_TRIPLE=aarch64-linux-gnu- \
-               CROSS_COMPILE="" \
+               CROSS_COMPILE=aarch64-linux-android- \
+               CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                Image
 
-      # 9. 上传产物
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /kernel/msm-5.4/out/arch/arm64/boot/Image
+          path: /kernel/
+            
