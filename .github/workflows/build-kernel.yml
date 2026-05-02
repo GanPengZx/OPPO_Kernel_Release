@@ -68,11 +68,10 @@ jobs:
           ls -la /kernel/common/
       - name: Build Kernel
         run: |
+          sudo chown -R $USER:$USER /kernel
           cd /kernel/common
-          
           echo "Running make gki_defconfig..."
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
-          
           echo "Starting compilation..."
           make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
 
