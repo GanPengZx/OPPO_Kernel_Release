@@ -1,24 +1,112 @@
-name: LineageOS Kernel Build
+name: Build OnePlus Kernel with KernelSU
 
 on:
   workflow_dispatch:
-
-permissions:
-  contents: write
+    inputs:
+      proprietary_repo:
+        description: '闭源驱动仓库地址'
+        required: true
+        default: 'https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8650'
+      proprietary_branch:
+        description: '闭源驱动仓库分支'
+        required: true
+        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
+      kernel_repo:
+        description: '内核源码仓库地址'
+        required: true
+        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8650'
+      kernel_branch:
+        description: '内核源码仓库分支'
+        required: true
+        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
 
 jobs:
-  build-kernel:
-    name: Build Kernel
-    runs-on: ubuntu-22.04
+  build:
+    runs-on: ubuntu-latest
     steps:
-      - name: Android Kernel Build Action
-        uses: dabao1955/kernel_build_action@v1.10.0
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+
+      - name: Clone Proprietary Drivers
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
+            ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
+
+      - name: Move Folders
+        run: |
+          cd proprietary_drivers
+          if [ -d "vendor" ]; then
+            echo "Moving vendor to /..."
+            sudo mv vendor /
+          fi
+          if [ -d "kernel_platform" ]; then
+            echo "Moving kernel_platform to /..."
+            sudo mv kernel_platform /
+          else
+            echo "Error: 'kernel_platform' folder not found!"
+            ls -la
+            exit 1
+          fi
+
+      - name: Clone Kernel Source
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+            ${{ github.event.inputs.kernel_repo }} kernel_source
+
+      - name: Prepare Directory Structure
+        run: |
+          echo "Creating /kernel_platform/common..."
+          sudo mkdir -p /kernel_platform/common
+          echo "Moving kernel source to /kernel_platform/common..."
+          sudo mv kernel_source/* /kernel_platform/common/
+          sudo rm -rf kernel_source
+          echo "Final structure:"
+          ls -la /kernel_platform/
+          ls -la /kernel_platform/common/
+
+      - name: Integrate KernelSU
+        run: |
+          cd /kernel_platform/common
+          echo "Downloading and applying KernelSU patch..."
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+          echo "KernelSU integration finished."
+      - name: Build Kernel
+        run: |
+          sudo chown -R $USER:$USER /kernel_platform
+          cd /kernel_platform/common
+          
+          echo "Running make gki_defconfig..."
+          make ARCH=arm64 LLVM=1 O=out gki_defconfig
+          echo "Applying KernelSU configurations..."
+          CONFIG_FILE="out/.config"
+          sed -i 's/# CONFIG_KPROBES is not set/CONFIG_KPROBES=y/' $CONFIG_FILE
+          sed -i 's/# CONFIG_KRETPROBES is not set/CONFIG_KRETPROBES=y/' $CONFIG_FILE
+          sed -i 's/# CONFIG_HAVE_KPROBES is not set/CONFIG_HAVE_KPROBES=y/' $CONFIG_FILE
+          sed -i 's/# CONFIG_HAVE_KRETPROBES is not set/CONFIG_HAVE_KRETPBES=y/' $CONFIG_FILE
+          sed -i 's/CONFIG_MODULE_SIG_FORCE=y/# CONFIG_MODULE_SIG_FORCE is not set/' $CONFIG_FILE
+          if ! grep -q "CONFIG_KSU=y" $CONFIG_FILE; then
+            echo "CONFIG_KSU=y" >> $CONFIG_FILE
+          fi
+          echo "Starting compilation..."
+          make ARCH=arm64 LLVM=1 O=out -j8 Image
+      - name: Package Kernel with AnyKernel3
+        run: |
+          cd /kernel_platform/common
+          echo "Cloning AnyKernel3..."
+          git clone https://github.com/osm0sis/AnyKernel3.git -b master
+          cp out/arch/arm64/boot/Image AnyKernel3/
+          cd AnyKernel3
+          zip -r ../KernelSU-OnePlus.zip *
+          cd ..
+          echo "Packaging finished."
+
+      - name: Upload Kernel Flashable Zip
+        uses: actions/upload-artifact@v4
         with:
-          kernel-url: https://github.com/LineageOS/android_kernel_oneplus_sm6375
-          kernel-branch: lineage-23.2
-          config: gki_defconfig
-          arch: arm64
-          aosp-gcc: true
-          aosp-clang: true
-          android-version: 12
-          aosp-clang-version: r383902
+          name: KernelSU-OnePlus
+          path: /kernel_platform/common/KernelSU-OnePlus.zip
