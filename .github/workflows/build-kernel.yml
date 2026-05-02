@@ -59,11 +59,9 @@ jobs:
         run: |
           echo "Creating /kernel/common..."
           sudo mkdir -p /kernel/common
-          
           echo "Moving kernel source to /kernel/common..."
           sudo mv kernel_source/* /kernel/common/
           sudo rm -rf kernel_source
-          
           echo "Final structure:"
           ls -la /kernel/
           ls -la /kernel/common/
@@ -74,6 +72,7 @@ jobs:
           echo "Running make gki_defconfig..."
           make ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC=clang O=out gki_defconfig
           echo "Starting compilation..."
+          sed -i 's/register_vendor_hooks()/register_vendor_hooks(void)/g' kernel/special_opt/special_opt.c || true
           make ARCH=arm64 CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CC=clang O=out -j$(nproc) Image
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
