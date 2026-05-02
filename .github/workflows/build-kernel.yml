@@ -119,7 +119,7 @@ jobs:
             sudo chown -R $USER:$USER /vendor
           fi
 
-            - name: Build Kernel
+      - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
           
