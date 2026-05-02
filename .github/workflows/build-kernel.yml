@@ -115,33 +115,26 @@ jobs:
           if [ -d "/vendor" ]; then
             sudo chown -R $USER:$USER /vendor
           fi
-      - name: Set swap to 10G
+      - name: Set swap to 20G
         uses: pierotofy/set-swap-space@master
         with:
-          swap-size-gb: 10
+          swap-size-gb: 20
 
-      # 8. 编译内核 (进入 /kernel/msm-5.4)
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
-          
-          # 导出环境变量 (使用系统内置 Clang 18)
           export PATH=/usr/lib/llvm-18/bin:$PATH
-          
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
                CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- \
                ${{ github.event.inputs.defconfig }}
-          
           echo "Starting compilation..."
-          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 \
                CLANG_TRIPLE=aarch64-linux-gnu- \
                CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi-
-
-      # 9. 上传产物
+               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- Image
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
