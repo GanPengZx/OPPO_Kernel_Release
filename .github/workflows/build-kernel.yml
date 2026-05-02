@@ -119,12 +119,17 @@ jobs:
             sudo chown -R $USER:$USER /vendor
           fi
 
-      - name: Build Kernel
+            - name: Build Kernel
         run: |
           cd /kernel/msm-5.4
           
-          # 设置工具链路径（使用刚刚克隆的工具链）
+          # 1. 引入工具链路径
           export PATH=/tmp/clang-11/bin:/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
+          
+          # 2. 关键：设置 Clang 优化选项以减少内存占用
+          # -fno-semantic-interposition: 减少链接时的符号解析压力
+          # -O1: 降低优化等级，大幅减少内存消耗 (编译会慢一点，但能跑通)
+          export KCFLAGS="-fno-semantic-interposition -O1"
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
           make -j$(nproc --all) \
@@ -138,8 +143,10 @@ jobs:
                CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                ${{ github.event.inputs.defconfig }}
           
-          echo "Starting compilation..."
-          make -j$(nproc --all) \
+          echo "Starting compilation (Limiting jobs to avoid OOM)..."
+          # 3. 关键：限制编译线程数为 4 (-j4)
+          # 即使你的机器有 8核16G，这里也必须限制，否则必挂
+          make -j4 \
                ARCH=arm64 \
                LLVM=1 \
                LLVM_IAS=0 \
@@ -149,6 +156,7 @@ jobs:
                CROSS_COMPILE=aarch64-linux-android- \
                CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                Image
+
 
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
