@@ -6,19 +6,19 @@ on:
       proprietary_repo:
         description: '闭源驱动仓库地址'
         required: true
-        default: 'https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8650'
+        default: 'https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm6375'
       proprietary_branch:
         description: '闭源驱动仓库分支'
         required: true
-        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
+        default: 'oneplus/sm6375_u_14.0.1_nord_ce4_lite_5g'
       kernel_repo:
         description: '内核源码仓库地址'
         required: true
-        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8650'
+        default: 'https://github.com/OnePlusOSS/android_kernel_oneplus_sm6375'
       kernel_branch:
         description: '内核源码仓库分支'
         required: true
-        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
+        default: 'oneplus/sm6375_u_14.0.1_nord_ce4_lite_5g'
 
 jobs:
   build:
