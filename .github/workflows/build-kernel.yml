@@ -42,15 +42,16 @@ jobs:
       # 3. 下载并设置 AOSP GCC 4.9 (严格按你的路径)
       - name: Setup AOSP GCC Toolchain
         run: |
+          # 创建目录并提权
           sudo mkdir -p /Gcc_64
           sudo mkdir -p /Gcc_32
           
-          echo "Downloading GCC 4.9 (64-bit)..."
+          cd /tmp
+          echo "Downloading GCC 4.9..."
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
           sudo tar -xzf gcc64.tar.gz -C /Gcc_64/ --strip-components=1
           rm gcc64.tar.gz
-          
-          echo "Downloading GCC 4.9 (32-bit)..."
+
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
           sudo tar -xzf gcc32.tar.gz -C /Gcc_32/ --strip-components=1
           rm gcc32.tar.gz
@@ -60,15 +61,21 @@ jobs:
       # 4. 克隆闭源驱动仓库到 /modules (你的第一步)
       - name: Clone Proprietary Drivers to /modules
         run: |
+          # 删除可能存在的旧目录
           sudo rm -rf /modules
-          git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
+          # 使用 sudo 克隆到 /modules
+          sudo git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /modules
 
       # 5. 克隆开源内核源码到 /kernel/msm-5.4 (你的第二步)
       - name: Clone Kernel Source to /kernel/msm-5.4
         run: |
+          # 删除可能存在的旧目录
           sudo rm -rf /kernel/msm-5.4
-          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+          # 创建父目录
+          sudo mkdir -p /kernel
+          # 使用 sudo 克隆到 /kernel/msm-5.4
+          sudo git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} /kernel/msm-5.4
 
       # 6. 移动文件夹 (严格执行你的命令)
@@ -99,11 +106,15 @@ jobs:
           # 清理
           sudo rm -rf /modules
 
-      # 7. 修复权限
+      # 7. 修复权限 (关键步骤)
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
           sudo chmod -R 755 /kernel
+          # 确保 vendor 目录也有正确权限
+          if [ -d "/vendor" ]; then
+            sudo chown -R $USER:$USER /vendor
+          fi
 
       # 8. 编译内核 (进入 /kernel/msm-5.4)
       - name: Build Kernel
