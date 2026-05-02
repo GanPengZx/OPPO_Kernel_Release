@@ -19,6 +19,10 @@ on:
         description: '内核源码仓库分支'
         required: true
         default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
+      defconfig:
+        description: '内核配置文件名称（如 gki_defconfig、vendor/xxx_defconfig）'
+        required: false
+        default: 'gki_defconfig'
 
 jobs:
   build:
@@ -31,47 +35,70 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+
+      # 1. 克隆闭源驱动仓库
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
+
+      # 2. 移动文件夹（OPPO 专属逻辑）
       - name: Move Folders
         run: |
           cd proprietary_drivers
+          
+          # 移动 vendor 到根目录
           if [ -d "vendor" ]; then
             echo "Moving vendor to /..."
             sudo mv vendor /
           fi
+          
+          # 移动 kernel 到根目录（OPPO 闭源仓库的核心文件夹）
           if [ -d "kernel" ]; then
             echo "Moving kernel to /..."
             sudo mv kernel /
           else
-            echo "Error: 'kernel' folder not found!"
+            echo "Error: 'kernel' folder not found in proprietary repo!"
             ls -la
             exit 1
           fi
+
+      # 3. 克隆内核源码
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
+
+      # 4. 准备目录结构（OPPO 专属：在 kernel 下创建 common）
       - name: Prepare Directory Structure
         run: |
           echo "Creating /kernel/common..."
           sudo mkdir -p /kernel/common
+          
           echo "Moving kernel source to /kernel/common..."
           sudo mv kernel_source/* /kernel/common/
           sudo rm -rf kernel_source
+          
           echo "Final structure:"
           ls -la /kernel/
           ls -la /kernel/common/
+
+      # 5. 编译内核
       - name: Build Kernel
         run: |
+          # 修复权限
           sudo chown -R $USER:$USER /kernel
+          
+          # 进入编译目录
           cd /kernel/common
-          echo "Running make gki_defconfig..."
-          make ARCH=arm64 LLVM=1 O=out gki_defconfig
+          
+          echo "Running make ${{ github.event.inputs.defconfig }}..."
+          make ARCH=arm64 LLVM=1 O=out ${{ github.event.inputs.defconfig }}
+          
           echo "Starting compilation..."
-          make ARCH=arm64 LLVM=1 O=out -j8 Image
+          make ARCH=arm64 LLVM=1 O=out -j$(nproc) Image
+
+      # 6. 上传产物
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
