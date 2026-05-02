@@ -33,106 +33,107 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 安装基础依赖和 Clang
-      - name: Install Dependencies
+      # 2. 安装基础依赖
+      - name: Install Base Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev clang llvm lld
+          sudo apt install -y wget git tar build-essential bc flex bison libssl-dev \
+                           libncurses-dev xz-utils cpio rsync lzop \
+                           gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+                           gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
 
-      # 3. 下载并设置 AOSP GCC 4.9 (教程指定版本)
-      - name: Setup AOSP GCC Toolchain
+      # 3. 下载并设置 Clang (严格按你的路径)
+      - name: Setup Clang
         run: |
-          sudo mkdir -p /home/ubuntu
-          sudo chown -R $USER:$USER /home/ubuntu
-          cd /home/ubuntu
-          
-          echo "Downloading GCC 4.9 (64-bit)..."
+          sudo mkdir -p /Clang
+          cd /Clang
+          echo "Downloading Clang..."
+          wget --tries=0 --waitretry=30 -q https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.8/clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-22.04.tar.xz
+          tar -xf clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-22.04.tar.xz --strip-components=1
+          rm clang+llvm-18.1.8-x86_64-linux-gnu-ubuntu-22.04.tar.xz
+          echo "Clang setup finished."
+
+      # 4. 下载并设置 GCC (严格按你的路径)
+      - name: Setup GCC Toolchain
+        run: |
+          sudo mkdir -p /Gcc_64
+          cd /Gcc_64
+          echo "Downloading GCC 64-bit..."
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
-          mkdir -p Gcc_64
-          tar -xzf gcc64.tar.gz -C Gcc_64/ --strip-components=1
+          tar -xzf gcc64.tar.gz --strip-components=1
           rm gcc64.tar.gz
           
-          echo "Downloading GCC 4.9 (32-bit)..."
+          sudo mkdir -p /Gcc_32
+          cd /Gcc_32
+          echo "Downloading GCC 32-bit..."
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
-          mkdir -p Gcc_32
-          tar -xzf gcc32.tar.gz -C Gcc_32/ --strip-components=1
+          tar -xzf gcc32.tar.gz --strip-components=1
           rm gcc32.tar.gz
           
           echo "GCC Toolchain setup finished."
 
-      # 4. 导出环境变量 (严格复刻教程)
-      - name: Export Environment Variables
-        run: |
-          echo "Exporting environment variables..."
-          echo "export PATH=/usr/lib/llvm-18/bin:$PATH" >> $GITHUB_ENV
-          echo "export CROSS_COMPILE=/home/ubuntu/Gcc_64/bin/aarch64-linux-android-" >> $GITHUB_ENV
-          echo "export CROSS_COMPILE_ARM32=/home/ubuntu/Gcc_32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
-          echo "export CC=clang" >> $GITHUB_ENV
-          echo "export LD=ld.lld" >> $GITHUB_ENV
-          echo "export LLVM=1" >> $GITHUB_ENV
-          echo "export LLVM_IAS=1" >> $GITHUB_ENV
-          source $GITHUB_ENV
-
-      # 5. 克隆闭源驱动仓库 (教程指定位置: /home/ubuntu/modules)
+      # 5. 克隆闭源驱动仓库 (到临时目录)
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
-            ${{ github.event.inputs.proprietary_repo }} /home/ubuntu/modules
+            ${{ github.event.inputs.proprietary_repo }} /tmp/proprietary
 
-      # 6. 克隆内核源码 (必须先于移动操作，确保目录存在)
-      - name: Clone Kernel Source
+      # 6. 移动闭源文件夹到根目录 (严格执行你的命令)
+      - name: Move Proprietary Folders to Root
         run: |
-          # 强制删除旧的残留目录，防止 git clone 报错
-          sudo rm -rf /home/ubuntu/kernel/msm-5.4
-          
+          sudo mv /tmp/proprietary/kernel /
+          sudo mv /tmp/proprietary/vendor /
+          sudo rm -rf /tmp/proprietary
+
+      # 7. 克隆开源内核源码到 /modules
+      - name: Clone Kernel Source to /modules
+        run: |
+          sudo rm -rf /modules
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
-            ${{ github.event.inputs.kernel_repo }} /home/ubuntu/kernel/msm-5.4
-            
-          echo "Kernel source structure:"
-          ls -la /home/ubuntu/kernel/msm-5.4/
+            ${{ github.event.inputs.kernel_repo }} /modules
 
-      # 7. 【核心修正】移动闭源文件夹 (严格执行教程命令)
-      - name: Move Proprietary Folders
+      # 8. 移动 modules 中的文件夹 (严格执行你的命令)
+      - name: Move Modules Folders
         run: |
-          cd /home/ubuntu/modules
+          # 确保目标目录存在
+          sudo mkdir -p /kernel/msm-5.4/techpack
           
-          # 教程命令 1: 移动 vendor
-          if [ -d "vendor" ]; then
-            echo "Moving vendor to /home/ubuntu/"
-            mv vendor /home/ubuntu/
-          else
-            echo "Warning: 'vendor' folder not found!"
-          fi
+          # 执行你的移动命令
+          sudo mv /modules/vendor /
+          sudo mv /modules/kernel/msm-5.4/techpack/* /kernel/msm-5.4/techpack/
           
-          # 教程命令 2: 移动 techpack 内容
-          # 此时 /home/ubuntu/kernel/msm-5.4 已经存在
-          if [ -d "kernel/msm-5.4/techpack" ]; then
-            echo "Moving techpack files to kernel source..."
-            # 确保目标目录存在
-            mkdir -p /home/ubuntu/kernel/msm-5.4/techpack/
-            mv kernel/msm-5.4/techpack/* /home/ubuntu/kernel/msm-5.4/techpack/
-          else
-            echo "Warning: 'kernel/msm-5.4/techpack' not found in modules!"
-          fi
-          
-          # 清理
-          cd /home/ubuntu
-          rm -rf modules
+          sudo rm -rf /modules
 
-      # 8. 编译内核
+      # 9. 修复权限
+      - name: Fix Permissions
+        run: |
+          sudo chown -R $USER:$USER /kernel
+          sudo chmod -R 755 /kernel
+
+      # 10. 编译内核 (严格执行你的命令)
       - name: Build Kernel
         run: |
-          cd /home/ubuntu/kernel/msm-5.4
+          cd /kernel/msm-5.4/
+          
+          # 导出环境变量 (严格按你的路径)
+          export PATH=/Clang/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make O=out ARCH=arm64 ${{ github.event.inputs.defconfig }}
+          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
+               CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
+               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi- \
+               ${{ github.event.inputs.defconfig }}
           
           echo "Starting compilation..."
-          make O=out ARCH=arm64 -j$(nproc --all)
+          make -j$(nproc --all) CC="clang" O=out ARCH=arm64 LD=ld.lld LLVM=1 LLVM_IAS=1 \
+               CLANG_TRIPLE=aarch64-linux-gnu- \
+               CROSS_COMPILE=/Gcc_64/bin/aarch64-linux-android- \
+               CROSS_COMPILE_ARM32=/Gcc_32/bin/arm-linux-androideabi-
 
-      # 9. 上传产物
+      # 11. 上传产物
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /home/ubuntu/kernel/msm-5.4/out/arch/arm64/boot/Image
+          path: /kernel/msm-5.4/out/arch/arm64/boot/Image
