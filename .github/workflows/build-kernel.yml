@@ -14,7 +14,7 @@ on:
       kernel_repo:
         description: '内核源码仓库地址'
         required: true
-        default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375'
+        default: 'https://github.com/GanPengZx/android_kernel_oppo_sm6375'
       kernel_branch:
         description: '内核源码仓库分支'
         required: true
@@ -22,7 +22,7 @@ on:
       defconfig:
         description: '内核配置文件'
         required: true
-        default: 'gki_defconfig'
+        default: 'phs110_defconfig'
 
 jobs:
   build:
