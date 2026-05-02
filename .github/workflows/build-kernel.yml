@@ -6,7 +6,7 @@ on:
       proprietary_repo:
         description: '闭源驱动仓库地址'
         required: true
-        default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm7325'
+        default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375'
       proprietary_branch:
         description: '闭源驱动仓库分支'
         required: true
@@ -79,7 +79,19 @@ jobs:
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /home/ubuntu/modules
 
-      # 6. 【核心修正】移动闭源文件夹 (严格执行教程命令)
+      # 6. 克隆内核源码 (必须先于移动操作，确保目录存在)
+      - name: Clone Kernel Source
+        run: |
+          # 强制删除旧的残留目录，防止 git clone 报错
+          sudo rm -rf /home/ubuntu/kernel/msm-5.4
+          
+          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+            ${{ github.event.inputs.kernel_repo }} /home/ubuntu/kernel/msm-5.4
+            
+          echo "Kernel source structure:"
+          ls -la /home/ubuntu/kernel/msm-5.4/
+
+      # 7. 【核心修正】移动闭源文件夹 (严格执行教程命令)
       - name: Move Proprietary Folders
         run: |
           cd /home/ubuntu/modules
@@ -93,7 +105,7 @@ jobs:
           fi
           
           # 教程命令 2: 移动 techpack 内容
-          # 注意：教程要求移动的是 modules/kernel/msm-5.4/techpack/*
+          # 此时 /home/ubuntu/kernel/msm-5.4 已经存在
           if [ -d "kernel/msm-5.4/techpack" ]; then
             echo "Moving techpack files to kernel source..."
             # 确保目标目录存在
@@ -106,15 +118,6 @@ jobs:
           # 清理
           cd /home/ubuntu
           rm -rf modules
-
-      # 7. 克隆内核源码 (教程指定位置: /home/ubuntu/kernel/msm-5.4)
-      - name: Clone Kernel Source
-        run: |
-          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
-            ${{ github.event.inputs.kernel_repo }} /home/ubuntu/kernel/msm-5.4
-            
-          echo "Kernel source structure:"
-          ls -la /home/ubuntu/kernel/msm-5.4/
 
       # 8. 编译内核
       - name: Build Kernel
