@@ -33,13 +33,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 安装基础依赖 (教程中提到的必备软件)
+      # 2. 安装基础依赖
       - name: Install Base Dependencies
         run: |
           sudo apt update
           sudo apt install -y build-essential bc flex bison git curl wget tar xz-utils cpio rsync lzop libncurses-dev libssl-dev
 
-      # 3. 【核心】下载并设置 AOSP 工具链 (严格对应教程版本)
+      # 3. 下载并设置 AOSP 工具链 (使用 Clang r383902 + GCC 4.9)
       - name: Setup AOSP Toolchain
         run: |
           # 创建教程指定的目录结构 /home/ubuntu
@@ -48,39 +48,34 @@ jobs:
           
           cd /home/ubuntu
           
-          # 下载 Clang r377782b (教程指定版本)
-          echo "Downloading Clang r377782b..."
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r377782b.tar.gz -O clang.tar.gz
+          # 下载 Clang r383902 (已根据您的指示更新版本)
+          echo "Downloading Clang r383902..."
+          wget --retry-connrefused --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r383902.tar.gz -O clang.tar.gz
           mkdir -p Clang
           tar -xzf clang.tar.gz -C Clang/ --strip-components=1
           rm clang.tar.gz
           
-          # 下载 GCC 4.9 (教程指定版本)
+          # 下载 GCC 4.9 (保持教程原版)
           echo "Downloading GCC 4.9..."
-          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
+          wget --retry-connrefused --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
           mkdir -p Gcc_64
           tar -xzf gcc64.tar.gz -C Gcc_64/ --strip-components=1
           rm gcc64.tar.gz
           
-          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
+          wget --retry-connrefused --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
           mkdir -p Gcc_32
           tar -xzf gcc32.tar.gz -C Gcc_32/ --strip-components=1
           rm gcc32.tar.gz
           
           echo "Toolchain setup finished."
 
-      # 4. 【核心】导出环境变量 (严格复刻教程中的 export 命令)
+      # 4. 导出环境变量 (严格复刻教程中的 export 命令)
       - name: Export Environment Variables
         run: |
           echo "Exporting environment variables..."
-          # 对应教程: export PATH=/home/ubuntu/Clang/bin:$PATH
           echo "export PATH=/home/ubuntu/Clang/bin:$PATH" >> $GITHUB_ENV
-          
-          # 对应教程: CROSS_COMPILE 等变量
           echo "export CROSS_COMPILE=/home/ubuntu/Gcc_64/bin/aarch64-linux-android-" >> $GITHUB_ENV
           echo "export CROSS_COMPILE_ARM32=/home/ubuntu/Gcc_32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
-          
-          # 刷新环境
           source $GITHUB_ENV
 
       # 5. 克隆闭源驱动仓库
@@ -94,13 +89,11 @@ jobs:
         run: |
           cd proprietary_drivers
           
-          # 移动 vendor
           if [ -d "vendor" ]; then
             echo "Moving vendor to /..."
             sudo mv vendor /
           fi
           
-          # 移动 kernel (教程逻辑：将 modules 中的 kernel 移出)
           if [ -d "kernel" ]; then
             echo "Moving kernel to /..."
             sudo mv kernel /
@@ -126,22 +119,16 @@ jobs:
           echo "Kernel structure:"
           ls -la /kernel/
 
-      # 8. 【核心】编译内核 (100% 复刻教程中的 make 命令)
+      # 8. 编译内核 (100% 复刻教程中的 make 命令)
       - name: Build Kernel
         run: |
-          # 修复权限 (对应教程中 /home/ubuntu 的权限)
           sudo chown -R $USER:$USER /kernel
-          
-          # 进入源码目录 (对应教程中的 /home/ubuntu/kernel/msm-5.4/)
           cd /kernel
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          # 对应教程第一条 make 命令 (生成配置)
           make O=out ${{ github.event.inputs.defconfig }}
           
           echo "Starting compilation..."
-          # 对应教程第二条 make 命令 (开始编译)
-          # 注意：这里去掉了 CC="clang"，因为已经在 PATH 中设置了 clang，且教程中未显式写出 CC=
           make O=out -j$(nproc --all) Image
 
       # 9. 上传产物
