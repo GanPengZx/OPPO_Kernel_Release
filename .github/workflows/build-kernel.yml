@@ -30,6 +30,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
+          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
       - name: Clone Proprietary Drivers
         run: |
