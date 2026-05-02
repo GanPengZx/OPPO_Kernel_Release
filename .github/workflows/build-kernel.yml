@@ -4,19 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       proprietary_repo:
-        description: '闭源驱动仓库地址 (例如: https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375)'
+        description: '闭源驱动仓库地址'
         required: true
         default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375'
       proprietary_branch:
-        description: '闭源驱动仓库分支 (例如: oppo/sm6375_t_13.1.0_oppo_a1_5g)'
+        description: '闭源驱动仓库分支'
         required: true
         default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
       kernel_repo:
-        description: '内核源码仓库地址 (例如: https://github.com/oppo-source/android_kernel_oppo_sm6375)'
+        description: '内核源码仓库地址'
         required: true
         default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375'
       kernel_branch:
-        description: '内核源码仓库分支 (例如: oppo/sm6375_t_13.1.0_oppo_a1_5g)'
+        description: '内核源码仓库分支'
         required: true
         default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
 
@@ -29,7 +29,8 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt update && sudo apt install build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+          sudo apt update
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
 
       - name: Clone Proprietary Drivers
         run: |
@@ -39,15 +40,24 @@ jobs:
       - name: Move Driver Folders to Root
         run: |
           cd proprietary_drivers
-          # 检查并移动 vendor 文件夹
+          
+          # 查找并移动 vendor 文件夹
           if [ -d "vendor" ]; then
+            echo "Moving vendor folder..."
             sudo mv vendor /
           fi
-          # 检查并移动 Kernel 或 Kernel_platform 文件夹
-          if [ -d "Kernel_platform" ]; then
-            sudo mv Kernel_platform /
-          elif [ -d "Kernel" ]; then
-            sudo mv Kernel /
+          
+          # 查找并移动 Kernel 或 Kernel_platform 文件夹（不区分大小写）
+          KERNEL_DIR=$(find . -maxdepth 1 -type d \( -iname "Kernel" -o -iname "Kernel_platform" \) | head -n 1)
+          
+          if [ -n "$KERNEL_DIR" ]; then
+            echo "Found driver directory: $KERNEL_DIR"
+            sudo mv "$KERNEL_DIR" /
+          else
+            echo "Error: No Kernel or Kernel_platform directory found!"
+            echo "Current directory contents:"
+            ls -la
+            exit 1
           fi
 
       - name: Clone Kernel Source
@@ -55,64 +65,48 @@ jobs:
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
 
-      -       - name: Prepare Kernel Directory Structure
+      - name: Prepare Kernel Directory Structure
         run: |
-          # === 增强版查找逻辑 ===
-          # 1. 先在工作目录下找（不区分大小写）
-          shopt -s nocaseglob
-          if [ -d "proprietary_drivers/kernel" ]; then
-            DRIVER_DIR="proprietary_drivers/kernel"
-          elif [ -d "proprietary_drivers/Kernel" ]; then
-            DRIVER_DIR="proprietary_drivers/Kernel"
-          elif [ -d "proprietary_drivers/kernel_platform" ]; then
-            DRIVER_DIR="proprietary_drivers/kernel_platform"
-          elif [ -d "proprietary_drivers/Kernel_platform" ]; then
-            DRIVER_DIR="proprietary_drivers/Kernel_platform"
+          # 确定内核根目录（不区分大小写）
+          if [ -d "/Kernel_platform" ]; then
+            KERNEL_ROOT="/Kernel_platform"
+          elif [ -d "/Kernel" ]; then
+            KERNEL_ROOT="/Kernel"
+          elif [ -d "/kernel_platform" ]; then
+            KERNEL_ROOT="/kernel_platform"
+          elif [ -d "/kernel" ]; then
+            KERNEL_ROOT="/kernel"
           else
-            echo "❌ 错误：在 proprietary_drivers 目录下未找到驱动文件夹！"
-            echo "当前目录内容："
-            ls -R proprietary_drivers
+            echo "Error: Kernel root directory not found!"
+            echo "Root directory contents:"
+            ls -la /
             exit 1
           fi
-
-          # 2. 确定目标目录名并移动
-          if [[ "$DRIVER_DIR" == *"platform"* ]]; then
-            TARGET_DIR="/Kernel_platform"
-          else
-            TARGET_DIR="/Kernel"
-          fi
-
-          echo "✅ 正在移动驱动文件夹到 $TARGET_DIR ..."
-          sudo mv "$DRIVER_DIR" "$TARGET_DIR"
-
-          # 3. 再次检查是否移动成功
-          if [ ! -d "$TARGET_DIR" ]; then
-            echo "❌ 致命错误：移动失败！根目录下找不到 $TARGET_DIR"
-            echo "当前根目录内容："
-            ls / | grep -E "Kernel|kernel"
-            exit 1
-          fi
-
-          # 4. 继续原来的操作
-          KERNEL_ROOT="$TARGET_DIR"
+          
+          echo "Using kernel root: $KERNEL_ROOT"
+          
+          # 创建 common 文件夹并移动内核源码
           mkdir -p $KERNEL_ROOT/common
-          echo "📂 正在将内核源码移入 common 目录..."
           mv kernel_source/* $KERNEL_ROOT/common/
           rm -rf kernel_source
 
-
       - name: Build Kernel Configuration
         run: |
-          cd /Kernel_platform || cd /Kernel
+          # 自动检测内核根目录
+          KERNEL_ROOT=$(find / -maxdepth 1 -type d \( -iname "Kernel*" \) | head -n 1)
+          cd $KERNEL_ROOT
           make ARCH=arm64 LLVM=1 O=out gki_defconfig
 
       - name: Compile Kernel
         run: |
-          cd /Kernel_platform || cd /Kernel
+          KERNEL_ROOT=$(find / -maxdepth 1 -type d \( -iname "Kernel*" \) | head -n 1)
+          cd $KERNEL_ROOT
           make ARCH=arm64 LLVM=1 O=out -j8 Image
 
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /Kernel_platform/out/arch/arm64/boot/Image || /Kernel/out/arch/arm64/boot/Image
+          path: |
+            /Kernel*/out/arch/arm64/boot/Image
+            /kernel*/out/arch/arm64/boot/Image
