@@ -37,52 +37,50 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y wget git tar build-essential bc flex bison libssl-dev \
-                               libncurses-dev xz-utils cpio rsync lzop \
-                               clang llvm lld \
-                               gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-                               gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+          sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev clang llvm lld
 
-      # 3. 下载并设置 GCC 4.9 工具链 (路径严格按你的要求)
-      - name: Setup GCC Toolchain
+      # 3. 下载并设置 GCC 4.9 (使用 sudo 提权)
+      - name: Setup AOSP GCC Toolchain
         run: |
+          # 创建目录并提权
           sudo mkdir -p /Gcc_64
-          cd /Gcc_64
-          echo "Downloading GCC 4.9 (64-bit)..."
-          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
-          tar -xzf gcc64.tar.gz --strip-components=1
-          rm gcc64.tar.gz
-          
           sudo mkdir -p /Gcc_32
-          cd /Gcc_32
-          echo "Downloading GCC 4.9 (32-bit)..."
+          
+          cd /tmp
+          echo "Downloading GCC 4.9..."
+          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
+          sudo tar -xzf gcc64.tar.gz -C /Gcc_64/ --strip-components=1
+          rm gcc64.tar.gz
+
           wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
-          tar -xzf gcc32.tar.gz --strip-components=1
+          sudo tar -xzf gcc32.tar.gz -C /Gcc_32/ --strip-components=1
           rm gcc32.tar.gz
           
           echo "GCC Toolchain setup finished."
 
-      # 4. 克隆闭源驱动仓库 (到临时目录)
+      # 4. 克隆闭源驱动仓库 (先克隆到临时目录)
       - name: Clone Proprietary Drivers
         run: |
+          rm -rf /tmp/proprietary
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} /tmp/proprietary
 
-      # 5. 移动闭源文件夹到根目录 (严格执行你的命令)
+      # 5. 移动闭源文件夹到根目录 (严格执行你的命令，使用 sudo)
       - name: Move Proprietary Folders to Root
         run: |
           sudo mv /tmp/proprietary/kernel /
           sudo mv /tmp/proprietary/vendor /
           sudo rm -rf /tmp/proprietary
 
-      # 6. 克隆开源内核源码到 /modules
+      # 6. 克隆开源内核源码到 /modules (先克隆到临时目录)
       - name: Clone Kernel Source to /modules
         run: |
           sudo rm -rf /modules
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
-            ${{ github.event.inputs.kernel_repo }} /modules
+            ${{ github.event.inputs.kernel_repo }} /tmp/modules
+          sudo mv /tmp/modules /
 
-      # 7. 移动 modules 中的文件夹 (严格执行你的命令)
+      # 7. 移动 modules 中的文件夹 (严格执行你的命令，使用 sudo)
       - name: Move Modules Folders
         run: |
           # 确保目标目录存在
@@ -94,18 +92,18 @@ jobs:
           
           sudo rm -rf /modules
 
-      # 8. 修复权限
+      # 8. 修复权限 (关键步骤)
       - name: Fix Permissions
         run: |
           sudo chown -R $USER:$USER /kernel
           sudo chmod -R 755 /kernel
 
-      # 9. 编译内核 (使用系统内置 Clang 18，严格执行你的命令)
+      # 9. 编译内核 (使用系统内置 Clang 18)
       - name: Build Kernel
         run: |
           cd /kernel/msm-5.4/
           
-          # 导出环境变量 (使用系统内置 Clang 18)
+          # 导出环境变量 (使用系统内置 Clang 18 的路径)
           export PATH=/usr/lib/llvm-18/bin:$PATH
           
           echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
