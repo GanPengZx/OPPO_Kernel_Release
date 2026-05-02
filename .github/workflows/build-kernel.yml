@@ -26,21 +26,21 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       # 1. 检出 Actions 脚本
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 安装基础依赖
+      # 2. 安装基础依赖 (使用系统自带 Clang，避免 404)
       - name: Install Base Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential bc flex bison git curl wget tar xz-utils cpio rsync lzop libncurses-dev libssl-dev
+          sudo apt install -y build-essential bc flex bison git curl tar xz-utils cpio rsync lzop libncurses-dev libssl-dev clang llvm lld
 
-      # 3. 下载并设置 AOSP 工具链 (使用 Clang r383902 + GCC 4.9)
-      - name: Setup AOSP Toolchain
+      # 3. 下载并设置 AOSP GCC 4.9 (教程指定版本)
+      - name: Setup AOSP GCC Toolchain
         run: |
           # 创建教程指定的目录结构 /home/ubuntu
           sudo mkdir -p /home/ubuntu
@@ -48,34 +48,33 @@ jobs:
           
           cd /home/ubuntu
           
-          # 下载 Clang r383902 (已根据您的指示更新版本)
-          echo "Downloading Clang r383902..."
-          wget --retry-connrefused --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r383902.tar.gz -O clang.tar.gz
-          mkdir -p Clang
-          tar -xzf clang.tar.gz -C Clang/ --strip-components=1
-          rm clang.tar.gz
-          
-          # 下载 GCC 4.9 (保持教程原版)
-          echo "Downloading GCC 4.9..."
-          wget --retry-connrefused --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
+          # 下载 GCC 4.9 (64位)
+          echo "Downloading GCC 4.9 (64-bit)..."
+          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/master.tar.gz -O gcc64.tar.gz
           mkdir -p Gcc_64
           tar -xzf gcc64.tar.gz -C Gcc_64/ --strip-components=1
           rm gcc64.tar.gz
           
-          wget --retry-connrefused --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
+          # 下载 GCC 4.9 (32位)
+          echo "Downloading GCC 4.9 (32-bit)..."
+          wget --tries=0 --waitretry=30 -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/master.tar.gz -O gcc32.tar.gz
           mkdir -p Gcc_32
           tar -xzf gcc32.tar.gz -C Gcc_32/ --strip-components=1
           rm gcc32.tar.gz
           
-          echo "Toolchain setup finished."
+          echo "GCC Toolchain setup finished."
 
-      # 4. 导出环境变量 (严格复刻教程中的 export 命令)
+      # 4. 导出环境变量 (严格复刻教程)
       - name: Export Environment Variables
         run: |
           echo "Exporting environment variables..."
-          echo "export PATH=/home/ubuntu/Clang/bin:$PATH" >> $GITHUB_ENV
+          echo "export PATH=/usr/lib/llvm-18/bin:$PATH" >> $GITHUB_ENV
           echo "export CROSS_COMPILE=/home/ubuntu/Gcc_64/bin/aarch64-linux-android-" >> $GITHUB_ENV
           echo "export CROSS_COMPILE_ARM32=/home/ubuntu/Gcc_32/bin/arm-linux-androideabi-" >> $GITHUB_ENV
+          echo "export CC=clang" >> $GITHUB_ENV
+          echo "export LD=ld.lld" >> $GITHUB_ENV
+          echo "export LLVM=1" >> $GITHUB_ENV
+          echo "export LLVM_IAS=1" >> $GITHUB_ENV
           source $GITHUB_ENV
 
       # 5. 克隆闭源驱动仓库
