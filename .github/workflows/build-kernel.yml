@@ -29,14 +29,25 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      # 0. 增加 Swap 空间 (防止内存溢出 OOM)
+      # 增加 Swap 空间以防止内存溢出 (OOM)
       - name: Create Swap Space
         run: |
+          # 1. 安全移除旧的 swapfile（如果存在），忽略不存在的错误
+          sudo rm -f /swapfile
+          
+          # 2. 重新创建 8GB 的 swapfile
           sudo fallocate -l 8G /swapfile
+          
+          # 3. 设置权限
           sudo chmod 600 /swapfile
+          
+          # 4. 格式化为 swap
           sudo mkswap /swapfile
+          
+          # 5. 启用 swap
           sudo swapon /swapfile
-          echo "Swap status:"
+          
+          echo "Swap space created:"
           free -h
 
       # 1. 检出 Actions 脚本
