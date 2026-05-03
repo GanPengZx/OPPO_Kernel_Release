@@ -85,3 +85,24 @@ jobs:
         with:
           name: kernel-image
           path: /kernel_platform/common/out/arch/arm64/boot/Image.gz
+      - name: Package AnyKernel3
+        run: |
+          echo "Cloning AnyKernel3..."
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
+
+          echo "Copying kernel image..."
+          cp /kernel_platform/common/out/arch/arm64/boot/Image.gz AK3/
+
+          echo "Setting up anykernel.sh..."
+          sed -i 's/do.devicecheck=1/do.devicecheck=0/' AK3/anykernel.sh
+          sed -i 's/do.modules=0/do.modules=1/' AK3/anykernel.sh
+
+          echo "Zipping..."
+          cd AK3
+          zip -r9 ../Kernel-AnyKernel3.zip *
+          cd ..
+      - name: Upload AnyKernel3 Zip
+        uses: actions/upload-artifact@v4
+        with:
+         name: kernel-anykernel3
+         path: Kernel-AnyKernel3.zip
