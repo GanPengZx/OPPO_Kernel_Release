@@ -1,4 +1,4 @@
-name: Build OPPO Kernel (Clang 11 + GCC 4.9)
+name: Build New Kernel(oplus)
 
 on:
   workflow_dispatch:
@@ -6,28 +6,23 @@ on:
       proprietary_repo:
         description: '闭源驱动仓库地址'
         required: true
-        default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375'
+        default: 'https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8650'
       proprietary_branch:
         description: '闭源驱动仓库分支'
         required: true
-        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
+        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
       kernel_repo:
         description: '内核源码仓库地址'
         required: true
-        default: 'https://github.com/GanPengZx/android_kernel_oppo_sm6375'
+        default: 'https://github.com/OnePlusOSS/android_kernel_common_oneplus_sm8650'
       kernel_branch:
         description: '内核源码仓库分支'
         required: true
-        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
-      defconfig:
-        description: '内核配置文件'
-        required: true
-        default: 'phs110_defconfig'
+        default: 'oneplus/sm8650_b_16.0.0_oneplus_13r'
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,108 +30,50 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz
-
-      - name: Set swap to 10G
-        uses: pierotofy/set-swap-space@master
-        with:
-          swap-size-gb: 10
-
-      # 克隆工具链：Clang 11 和 GCC 4.9
-      - name: Setup Toolchains (Clang 11 + GCC 4.9)
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
+      - name: Clone Proprietary Drivers
         run: |
-          cd /tmp
-          
-          echo "====== 克隆 Clang 11 ======"
-          git clone --depth=1 -b 11.x https://gitlab.com/stormbreaker-project/google-clang clang-11
-          
-          echo "====== 克隆 GCC 4.9 (64位) ======"
-          git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
-          
-          echo "====== 克隆 GCC 4.9 (32位) ======"
-          git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
-          
-          echo "Toolchains setup finished."
-          /tmp/clang-11/bin/clang --version
-
-      - name: Clone Proprietary Drivers to /modules
-        run: |
-          sudo rm -rf /modules
-          sudo git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
-            ${{ github.event.inputs.proprietary_repo }} /modules
-
-      - name: Clone Kernel Source to /kernel/msm-5.4
-        run: |
-          sudo rm -rf /kernel/msm-5.4
-          sudo mkdir -p /kernel
-          sudo git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
-            ${{ github.event.inputs.kernel_repo }} /kernel/msm-5.4
-
+          git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
+            ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
       - name: Move Folders
         run: |
-          echo "Current structure of /modules:"
-          ls -R /modules
-          
-          if [ -d "/modules/vendor" ]; then
-            echo "Moving /modules/vendor to /"
-            sudo mv /modules/vendor /
+          cd proprietary_drivers
+          if [ -d "vendor" ]; then
+            echo "Moving vendor to /..."
+            sudo mv vendor /
+          fi
+          if [ -d "kernel_platform" ]; then
+            echo "Moving kernel_platform to /..."
+            sudo mv kernel_platform /
           else
-            echo "Error: /modules/vendor not found!"
+            echo "Error: 'kernel_platform' folder not found!"
+            ls -la
             exit 1
           fi
-          
-          if [ -d "/modules/kernel/msm-5.4/techpack" ]; then
-            echo "Moving techpack files..."
-            sudo mkdir -p /kernel/msm-5.4/techpack
-            sudo mv /modules/kernel/msm-5.4/techpack/* /kernel/msm-5.4/techpack/
-          else
-            echo "Error: /modules/kernel/msm-5.4/techpack not found!"
-            exit 1
-          fi
-          
-          sudo rm -rf /modules
-
-      - name: Fix Permissions
+      - name: Clone Kernel Source
         run: |
-          sudo chown -R $USER:$USER /kernel
-          sudo chmod -R 755 /kernel
-          if [ -d "/vendor" ]; then
-            sudo chown -R $USER:$USER /vendor
-          fi
-
-      - name: Build Kernel (Clang 11 + GCC 4.9)
+          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+            ${{ github.event.inputs.kernel_repo }} kernel_source
+      - name: Prepare Directory Structure
         run: |
-          cd /kernel/msm-5.4
-          
-          # 设置工具链路径：Clang 11 在前，GCC 4.9 在后
-          export PATH=/tmp/clang-11/bin:/tmp/gcc64/bin:/tmp/gcc32/bin:$PATH
-          
-          echo "Generating defconfig: ${{ github.event.inputs.defconfig }}"
-          make -j1 \
-               ARCH=arm64 \
-               LLVM=1 \
-               LLVM_IAS=1 \
-               CC=clang \
-               LD=ld.lld \
-               CLANG_TRIPLE=aarch64-linux-gnu- \
-               CROSS_COMPILE=aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-               ${{ github.event.inputs.defconfig }}
-          
+          echo "Creating /kernel_platform/common..."
+          sudo mkdir -p /kernel_platform/common
+          echo "Moving kernel source to /kernel_platform/common..."
+          sudo mv kernel_source/* /kernel_platform/common/
+          sudo rm -rf kernel_source
+          echo "Final structure:"
+          ls -la /kernel_platform/
+          ls -la /kernel_platform/common/
+      - name: Build Kernel
+        run: |
+          sudo chown -R $USER:$USER /kernel_platform
+          cd /kernel_platform/common
+          echo "Running make gki_defconfig..."
+          make ARCH=arm64 LLVM=1 O=out gki_defconfig
           echo "Starting compilation..."
-          make -j1 \
-               ARCH=arm64 \
-               LLVM=1 \
-               LLVM_IAS=1 \
-               CC=clang \
-               LD=ld.lld \
-               CLANG_TRIPLE=aarch64-linux-gnu- \
-               CROSS_COMPILE=aarch64-linux-android- \
-               CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-               Image
-
+          make ARCH=arm64 LLVM=1 O=out -j8
       - name: Upload Kernel Image
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /kernel/msm-5.4/out/arch/arm64/boot/Image
+          path: /kernel_platform/common/out/arch/arm64/boot/Image.gz
