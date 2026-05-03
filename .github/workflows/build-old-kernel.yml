@@ -137,6 +137,7 @@ jobs:
       # 9. 开始编译（旧内核混合编译模式）
       - name: Build Kernel
         run: |
+          sudo chown -R $USER:$USER /kernel/${{ github.event.inputs.kernel_version_folder }}
           cd /kernel/${{ github.event.inputs.kernel_version_folder }}
           
           # 清理环境
@@ -146,6 +147,7 @@ jobs:
           echo "==> Running make ${{ github.event.inputs.defconfig }}..."
           make -j$(nproc --all) \
             ARCH=arm64 \
+            O=out \
             CC=clang \
             LD=ld.lld \
             LLVM=1 \
@@ -159,6 +161,7 @@ jobs:
           echo "==> Starting compilation..."
           make -j$(nproc --all) \
             ARCH=arm64 \
+            O=out \
             CC=clang \
             LD=ld.lld \
             LLVM=1 \
@@ -173,7 +176,7 @@ jobs:
 
           echo "==> Copying kernel image..."
           # 旧内核通常在 arch/arm64/boot/ 下
-          cp /kernel/${{ github.event.inputs.kernel_version_folder }}/arch/arm64/boot/Image.gz AK3/ 2>/dev/null || \
+          cp /kernel/${{ github.event.inputs.kernel_version_folder }}/out/arch/arm64/boot/Image.gz AK3/ 2>/dev/null || \
           cp /kernel/${{ github.event.inputs.kernel_version_folder }}/out/arch/arm64/boot/Image.gz AK3/
 
           echo "==> Setting up anykernel.sh..."
@@ -195,4 +198,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: old-kernel-image
-          path: /kernel/${{ github.event.inputs.kernel_version_folder }}/arch/arm64/boot/Image.gz
+          path: /kernel/${{ github.event.inputs.kernel_version_folder }}/out/arch/arm64/boot/Image.gz
