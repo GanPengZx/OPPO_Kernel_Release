@@ -25,7 +25,7 @@ on:
       kernel_version_folder:
         description: '内核版本文件夹名 (旧内核特有, 如: msm-4.9, msm-5.4)'
         required: true
-        default: 'msm-4.9'
+        default: 'msm-5.4'
       defconfig:
         description: '配置文件名称'
         required: true
@@ -121,20 +121,19 @@ jobs:
             ${{ github.event.inputs.kernel_repo }} kernel_source
 
       # 8. 准备内核源码目录（放入指定的版本文件夹）
+      
       - name: Prepare Directory Structure
         run: |
-          KERNEL_VERSION="${{ github.event.inputs.kernel_version_folder }}"
-          echo "Creating /kernel/$KERNEL_VERSION..."
-          sudo mkdir -p /kernel/$KERNEL_VERSION
+          echo "Creating /kernel/${{ github.event.inputs.kernel_version_folder }}..."
+          sudo mkdir -p /kernel/${{ github.event.inputs.kernel_version_folder }}
           
-          echo "Moving kernel source to /kernel/$KERNEL_VERSION..."
-          sudo mv kernel_source/* /kernel/$KERNEL_VERSION/
+          echo "Moving kernel source to /kernel/${{ github.event.inputs.kernel_version_folder }}..."
+          # 使用 cp -r 覆盖复制，然后删除源目录（实现覆盖移动效果）
+          sudo cp -rf kernel_source/* /kernel/${{ github.event.inputs.kernel_version_folder }}/
           sudo rm -rf kernel_source
           
           echo "Final structure:"
-          ls -la /kernel/
-          ls -la /kernel/$KERNEL_VERSION/
-
+          ls -la /kernel/${{ github.event.inputs.kernel_version_folder }}/
       # 9. 开始编译（旧内核混合编译模式）
       - name: Build Kernel
         run: |
