@@ -71,21 +71,26 @@ jobs:
         with:
           swap-size-gb: 15
 
-      # 4. 【核心】下载旧内核专用工具链（使用你提供的稳定源）
+      # 4. 【核心】下载旧内核专用工具链（使用 curl 下载 Clang）
       - name: Download Toolchains
         run: |
-          echo "==> Cloning Clang 11 (Stormbreaker Project)..."
-          git clone --depth=1 -b 11.x https://gitlab.com/stormbreaker-project/google-clang clang-11
-
+          echo "==> Downloading Clang r383902b..."
+          # 使用 curl 下载 Clang，显示实时进度条
+          curl --progress-bar -L https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/a8b30aef74e74fb93ba36562c7031716989ed4ea.tar.gz -o clang.tar.gz
+          
+          echo "==> Extracting Clang..."
+          mkdir -p clang-r383902b
+          tar -xzf clang.tar.gz -C clang-r383902b
+          
           echo "==> Cloning GCC 4.9 (aarch64)..."
           git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
-
+          
           echo "==> Cloning GCC 4.9 (arm32)..."
           git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
-
-          # 设置环境变量
-          echo "PATH=$PATH:$PWD/clang-11/bin:$PWD/gcc64/bin:$PWD/gcc32/bin" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=$PWD/clang-11/lib" >> $GITHUB_ENV
+          
+          # 设置环境变量（使用绝对路径）
+          echo "PATH=$GITHUB_WORKSPACE/clang-r383902b/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/clang-r383902b/lib" >> $GITHUB_ENV
 
       # 5. 克隆闭源驱动（包含 vendor 和 kernel 目录结构）
       - name: Clone Proprietary Drivers
@@ -121,7 +126,6 @@ jobs:
             ${{ github.event.inputs.kernel_repo }} kernel_source
 
       # 8. 准备内核源码目录（放入指定的版本文件夹）
-      
       - name: Prepare Directory Structure
         run: |
           echo "Creating /kernel/${{ github.event.inputs.kernel_version_folder }}..."
@@ -134,6 +138,7 @@ jobs:
           
           echo "Final structure:"
           ls -la /kernel/${{ github.event.inputs.kernel_version_folder }}/
+
       # 9. 开始编译（旧内核混合编译模式）
       - name: Build Kernel
         run: |
@@ -169,6 +174,8 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
             CROSS_COMPILE_ARM32=arm-linux-androideabi-
+
+      # 10. 打包 AnyKernel3
       - name: Package AnyKernel3
         run: |
           echo "==> Cloning AnyKernel3..."
@@ -188,6 +195,7 @@ jobs:
           zip -r9 ../Old-Kernel-AnyKernel3.zip *
           cd ..
 
+      # 11. 上传产物
       - name: Upload AnyKernel3 Zip
         uses: actions/upload-artifact@v4
         with:
