@@ -3,7 +3,6 @@ name: Build Old Kernel
 on:
   workflow_dispatch:
     inputs:
-      # === 仓库配置 ===
       proprietary_repo:
         description: '闭源驱动仓库地址 (如: oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375)'
         required: true
@@ -20,96 +19,53 @@ on:
         description: '内核源码分支'
         required: true
         default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
-      
-      # === 内核配置 ===
       kernel_version_folder:
-        description: '内核版本文件夹名 (旧内核特有, 如: msm-4.9, msm-5.4)'
+        description: '内核文件夹名'
         required: true
         default: 'msm-5.4'
       defconfig:
         description: '配置文件名称'
         required: true
         default: 'gki_defconfig'
-
+      d_clang:
+        description: 'Clang下载直链'
+        required: true
+        default: 'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/a8b30aef74e74fb93ba36562c7031716989ed4ea.tar.gz'
 jobs:
   build:
-    runs-on: ubuntu-latest
-    
+    runs-on: ubuntu-22.04
     steps:
-      # 1. 检出当前仓库（用于存放 workflow 文件）
       - name: Checkout
         uses: actions/checkout@v4
-
-      # 2. 安装基础编译依赖
       - name: Install Dependencies
         run: |
-          sudo apt update
-          sudo apt install -y \
-            build-essential \
-            libssl-dev \
-            bc \
-            flex \
-            bison \
-            git \
-            zip \
-            unzip \
-            curl \
-            wget \
-            tar \
-            xz-utils \
-            cpio \
-            rsync \
-            lzop \
-            zstd \
-            libncurses-dev \
-            libelf-dev \
-            dwarves
-
-      # 3. 设置 15G 交换空间（防止编译 OOM）
+          sudo apt update && sudo apt-get install git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python3 zstd libc6 binutils libc6-dev-i386 gcc g++ p7zip p7zip-full -y
       - name: Set swap to 15G
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 15
-
-      # 4. 【核心】下载旧内核专用工具链（使用 curl 下载 Clang）
       - name: Download Toolchains
         run: |
           echo "==> Downloading Clang r383902b..."
-          # 使用 curl 下载 Clang，显示实时进度条
-          curl --progress-bar -L https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/a8b30aef74e74fb93ba36562c7031716989ed4ea.tar.gz -o clang.tar.gz
-          
+          curl --progress-bar -L ${{ github.event.inputs.d_clang }} -o clang.tar.gz
           echo "==> Extracting Clang..."
-          mkdir -p clang-r383902b
-          tar -xzf clang.tar.gz -C clang-r383902b
-          
+          tar -zxvf clang.tar.gz
           echo "==> Cloning GCC 4.9 (aarch64)..."
           git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
-          
           echo "==> Cloning GCC 4.9 (arm32)..."
           git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
-          
-          # 设置环境变量（使用绝对路径）
-          echo "PATH=$GITHUB_WORKSPACE/clang-r383902b/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/clang-r383902b/lib" >> $GITHUB_ENV
-
-      # 5. 克隆闭源驱动（包含 vendor 和 kernel 目录结构）
+          export PATH=$GITHUB_WORKSPACE/clang-r383902b/bin:$PATH
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
-
-      # 6. 移动旧内核目录结构
-      - name: Move Folders (Old Kernel Structure)
+      - name: Move Folders
         run: |
           cd proprietary_drivers
-          
-          # 移动 vendor 目录
           if [ -d "vendor" ]; then
             echo "Moving vendor to /..."
             sudo mv vendor /
           fi
-          
-          # 移动 kernel 目录（旧内核的根目录）
           if [ -d "kernel" ]; then
             echo "Moving kernel to /..."
             sudo mv kernel /
@@ -118,37 +74,24 @@ jobs:
             ls -la
             exit 1
           fi
-
-      # 7. 克隆内核源码
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
-
-      # 8. 准备内核源码目录（放入指定的版本文件夹）
       - name: Prepare Directory Structure
         run: |
           echo "Creating /kernel/${{ github.event.inputs.kernel_version_folder }}..."
           sudo mkdir -p /kernel/${{ github.event.inputs.kernel_version_folder }}
-          
           echo "Moving kernel source to /kernel/${{ github.event.inputs.kernel_version_folder }}..."
-          # 使用 cp -r 覆盖复制，然后删除源目录（实现覆盖移动效果）
           sudo cp -rf kernel_source/* /kernel/${{ github.event.inputs.kernel_version_folder }}/
           sudo rm -rf kernel_source
-          
           echo "Final structure:"
           ls -la /kernel/${{ github.event.inputs.kernel_version_folder }}/
-
-      # 9. 开始编译（旧内核混合编译模式）
       - name: Build Kernel
         run: |
           sudo chown -R $USER:$USER /kernel/${{ github.event.inputs.kernel_version_folder }}
           cd /kernel/${{ github.event.inputs.kernel_version_folder }}
-          
-          # 清理环境
           make mrproper
-          
-          # 生成配置
           echo "==> Running make ${{ github.event.inputs.defconfig }}..."
           make -j$(nproc --all) \
             ARCH=arm64 \
@@ -158,11 +101,9 @@ jobs:
             LLVM=1 \
             LLVM_IAS=1 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            CROSS_COMPILE=$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi- \
             ${{ github.event.inputs.defconfig }}
-          
-          # 开始编译
           echo "==> Starting compilation..."
           make -j$(nproc --all) \
             ARCH=arm64 \
@@ -172,36 +113,27 @@ jobs:
             LLVM=1 \
             LLVM_IAS=1 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi-
-
-      # 10. 打包 AnyKernel3
+            CROSS_COMPILE=$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-
       - name: Package AnyKernel3
         run: |
           echo "==> Cloning AnyKernel3..."
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
-
           echo "==> Copying kernel image..."
-          # 旧内核通常在 arch/arm64/boot/ 下
           cp /kernel/${{ github.event.inputs.kernel_version_folder }}/out/arch/arm64/boot/Image.gz AK3/ 2>/dev/null || \
           cp /kernel/${{ github.event.inputs.kernel_version_folder }}/out/arch/arm64/boot/Image.gz AK3/
-
           echo "==> Setting up anykernel.sh..."
           sed -i 's/do.devicecheck=1/do.devicecheck=0/' AK3/anykernel.sh
           sed -i 's/do.modules=0/do.modules=1/' AK3/anykernel.sh
-
           echo "==> Zipping..."
           cd AK3
           zip -r9 ../Old-Kernel-AnyKernel3.zip *
           cd ..
-
-      # 11. 上传产物
       - name: Upload AnyKernel3 Zip
         uses: actions/upload-artifact@v4
         with:
           name: old-kernel-ak3
           path: Old-Kernel-AnyKernel3.zip
-
       - name: Upload Raw Image
         uses: actions/upload-artifact@v4
         with:
