@@ -1,1 +1,130 @@
 
+name: Build Old Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      proprietary_repo:
+        description: '闭源驱动仓库地址'
+        required: true
+        default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375'
+      proprietary_branch:
+        description: '闭源驱动仓库分支'
+        required: true
+        default: 'oppo/sm6375_r_13.0.0'
+      kernel_repo:
+        description: '内核源码仓库地址'
+        required: true
+        default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375'
+      kernel_branch:
+        description: '内核源码仓库分支'
+        required: true
+        default: 'oppo/sm6375_r_13.0.0'
+      kernel_version_folder:
+        description: '内核版本文件夹名 (如: msm-5.4)'
+        required: true
+        default: 'msm-5.4'
+      defconfig:
+        description: '配置文件名称'
+        required: true
+        default: 'gki_defconfig'
+      clang_version:
+        description: 'Clang 版本 (如: 11.0.2)'
+        required: true
+        default: '11.0.2'
+      gcc_version:
+        description: 'GCC 版本 (如: 4.9)'
+        required: true
+        default: '4.9'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev gcc g++ make
+
+      - name: Set swap to 15G
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 15
+
+      - name: Download Toolchains
+        run: |
+          # 下载 Clang
+          wget https://github.com/llvm/llvm-project/releases/download/llvmorg-${{ github.event.inputs.clang_version }}/clang+llvm-${{ github.event.inputs.clang_version }}-x86_64-linux-gnu-ubuntu-20.04.tar.xz
+          tar -xf clang+llvm-${{ github.event.inputs.clang_version }}-x86_64-linux-gnu-ubuntu-20.04.tar.xz
+          mv clang+llvm-${{ github.event.inputs.clang_version }}-x86_64-linux-gnu-ubuntu-20.04 clang
+          
+          # 下载 GCC 4.9 (aarch64)
+          wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-${{ github.event.inputs.gcc_version }}/+archive/refs/heads/master.tar.gz
+          mkdir -p gcc64
+          tar -xf master.tar.gz -C gcc64
+          
+          # 下载 GCC 4.9 (arm32)
+          wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-${{ github.event.inputs.gcc_version }}/+archive/refs/heads/master.tar.gz
+          mkdir -p gcc32
+          tar -xf master.tar.gz -C gcc32
+          
+          echo "CLANG_PATH=$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_ENV
+          echo "GCC64_PATH=$GITHUB_WORKSPACE/gcc64/bin" >> $GITHUB_ENV
+          echo "GCC32_PATH=$GITHUB_WORKSPACE/gcc32/bin" >> $GITHUB_ENV
+          echo "$GITHUB_WORKSPACE/clang/bin" >> $GITHUB_PATH
+
+      - name: Clone Proprietary Drivers
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
+            ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
+
+      - name: Move Folders (Old Kernel Structure)
+        run: |
+          cd proprietary_drivers
+          if [ -d "vendor" ]; then
+            echo "Moving vendor to /..."
+            sudo mv vendor /
+          fi
+          if [ -d "kernel" ]; then
+            echo "Moving kernel to /..."
+            sudo mv kernel /
+          else
+            echo "Error: 'kernel' folder not found!"
+            ls -la
+            exit 1
+          fi
+
+      - name: Clone Kernel Source
+        run: |
+          git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
+            ${{ github.event.inputs.kernel_repo }} kernel_source
+
+      - name: Prepare Directory Structure (Old Kernel)
+        run: |
+          echo "Creating /kernel/${{ github.event.inputs.kernel_version_folder }}..."
+          sudo mkdir -p /kernel/${{ github.event.inputs.kernel_version_folder }}
+          echo "Moving kernel source to /kernel/${{ github.event.inputs.kernel_version_folder }}..."
+          sudo mv kernel_source/* /kernel/${{ github.event.inputs.kernel_version_folder }}/
+          sudo rm -rf kernel_source
+          echo "Final structure:"
+          ls -la /kernel/
+          ls -la /kernel/${{ github.event.inputs.kernel_version_folder }}/
+
+      - name: Build Kernel (Old Method)
+        run: |
+          sudo chown -R $USER:$USER /kernel
+          cd /kernel/${{ github.event.inputs.kernel_version_folder }}
+          
+          echo "Running make ${{ github.event.inputs.defconfig }}..."
+          make -j$(nproc --all) \
+            CC="clang" \
+            O=out \
+            ARCH=arm64 \
+            LD=ld.lld \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=$GCC64_PATH/aarch64-linux-android- \
