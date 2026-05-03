@@ -1,4 +1,4 @@
-name: Build Old Kernel (Stable)
+name: Build Old Kernel
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
       proprietary_branch:
         description: '闭源驱动仓库分支'
         required: true
-        default: 'oppo/sm6375_r_13.0.0'
+        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
       kernel_repo:
         description: '内核源码仓库地址 (如: oppo-source/android_kernel_oppo_sm6375)'
         required: true
@@ -19,7 +19,7 @@ on:
       kernel_branch:
         description: '内核源码分支'
         required: true
-        default: 'oppo/sm6375_r_13.0.0'
+        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
       
       # === 内核配置 ===
       kernel_version_folder:
