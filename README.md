@@ -2,6 +2,10 @@
 
 本仓库使用 GitHub Actions 实现自动化编译 OPPO/OnePlus 设备的手机内核。
 
+
+[![Build New Kernel](https://github.com/GanPengZx/OPPO_Kernel_Release/actions/workflows/build-kernel.yml/badge.svg)](https://github.com/GanPengZx/OPPO_Kernel_Release/actions/workflows/build-kernel.yml)
+
+
 ## 📖 使用教程
 
 ### 1. 准备工作
