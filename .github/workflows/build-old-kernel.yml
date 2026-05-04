@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       proprietary_repo:
-        description: '闭源驱动仓库地址 (如: oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375)'
+        description: '闭源驱动仓库地址'
         required: true
         default: 'https://github.com/oppo-source/android_kernel_modules_and_devicetree_oppo_sm6375'
       proprietary_branch:
@@ -12,9 +12,9 @@ on:
         required: true
         default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
       kernel_repo:
-        description: '内核源码仓库地址 (如: oppo-source/android_kernel_oppo_sm6375)'
+        description: '内核源码仓库地址'
         required: true
-        default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375'
+        default: 'https://github.com/GanPengZx/android_kernel_oppo_sm6375'
       kernel_branch:
         description: '内核源码分支'
         required: true
@@ -26,7 +26,7 @@ on:
       defconfig:
         description: '配置文件名称'
         required: true
-        default: 'gki_defconfig'
+        default: 'PHS110_defconfig'
 jobs:
   build:
     runs-on: ubuntu-22.04
