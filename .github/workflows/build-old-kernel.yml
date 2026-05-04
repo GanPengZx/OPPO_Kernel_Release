@@ -79,8 +79,8 @@ jobs:
           sudo rm -rf kernel_source
           echo "Final structure:"
           ls -la /kernel/${{ github.event.inputs.kernel_version_folder }}/
-      - name: Build
-        uses: dabao1955/kernel_build_action@main
+      - name: Android Kernel Build Action
+        uses: dabao1955/kernel_build_action@v1.10.0
         with:
           kernel-url: /kernel/${{ github.event.inputs.kernel_version_folder }}/
           config: ${{ github.event.inputs.defconfig }}
