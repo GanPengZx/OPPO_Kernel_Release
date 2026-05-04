@@ -27,10 +27,6 @@ on:
         description: '配置文件名称'
         required: true
         default: 'gki_defconfig'
-      d_clang:
-        description: 'Clang版本'
-        required: true
-        default: '11'
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -50,10 +46,7 @@ jobs:
           git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
           echo "==> Cloning GCC 4.9 (arm32)..."
           git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
-      - name: Setup LLVM
-        uses: ZhongRuoyu/setup-llvm@v0
-        with:
-         llvm-version: ${{ github.event.inputs.d_clang }}         
+          
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
@@ -86,34 +79,17 @@ jobs:
           sudo rm -rf kernel_source
           echo "Final structure:"
           ls -la /kernel/${{ github.event.inputs.kernel_version_folder }}/
-      - name: Build Kernel
-        run: |
-          sudo chown -R $USER:$USER /kernel/${{ github.event.inputs.kernel_version_folder }}
-          cd /kernel/${{ github.event.inputs.kernel_version_folder }}
-          make mrproper
-          echo "==> Running make ${{ github.event.inputs.defconfig }}..."
-          make -j$(nproc --all) \
-            ARCH=arm64 \
-            O=out \
-            CC=clang \
-            LD=ld.lld \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi- \
-            ${{ github.event.inputs.defconfig }}
-          echo "==> Starting compilation..."
-          make -j$(nproc --all) \
-            ARCH=arm64 \
-            O=out \
-            CC=clang \
-            LD=ld.lld \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=$GITHUB_WORKSPACE/gcc64/bin/aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=$GITHUB_WORKSPACE/gcc32/bin/arm-linux-androideabi-
+      - name: Build
+        uses: dabao1955/kernel_build_action@main
+        with:
+          kernel-url: /kernel/${{ github.event.inputs.kernel_version_folder }}/
+          config: ${{ github.event.inputs.defconfig }}
+          arch: arm64
+          aosp-gcc: true
+          aosp-clang: true
+          android-version: 12
+          aosp-clang-version: r383902
+          anykernel3: true
       - name: Package AnyKernel3
         run: |
           echo "==> Cloning AnyKernel3..."
