@@ -90,6 +90,10 @@ jobs:
           android-version: 12
           aosp-clang-version: r383902
           anykernel3: true
+          ksu: true
+          ksu-version: v0.9.5
+          make-args: 'KCFLAGS="-Wno-error=section-mismatch"'
+        
       - name: Package AnyKernel3
         run: |
           echo "==> Cloning AnyKernel3..."
