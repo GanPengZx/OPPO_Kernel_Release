@@ -28,9 +28,9 @@ on:
         required: true
         default: 'gki_defconfig'
       d_clang:
-        description: 'Clang下载直链'
+        description: 'Clang版本'
         required: true
-        default: 'https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/a8b30aef74e74fb93ba36562c7031716989ed4ea.tar.gz'
+        default: '11'
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -46,15 +46,15 @@ jobs:
           swap-size-gb: 15
       - name: Download Toolchains
         run: |
-          echo "==> Downloading Clang r383902b..."
-          curl --progress-bar -L ${{ github.event.inputs.d_clang }} -o clang.tar.gz
-          echo "==> Extracting Clang..."
-          tar -zxvf clang.tar.gz
           echo "==> Cloning GCC 4.9 (aarch64)..."
           git clone --depth=1 https://github.com/stormbreaker-project/aarch64-linux-android-4.9 gcc64
           echo "==> Cloning GCC 4.9 (arm32)..."
           git clone --depth=1 https://github.com/stormbreaker-project/arm-linux-androideabi-4.9 gcc32
-          echo "PATH=$GITHUB_WORKSPACE/clang/bin:$GITHUB_WORKSPACE/gcc64/bin:$GITHUB_WORKSPACE/gcc32/bin:$PATH" >> $GITHUB_ENV
+      - name: Install Clang
+        uses: egor-tensin/setup-clang@v2.2
+        with:
+          version: ${{ github.event.inputs.d_clang }}
+          platform: x64         
       - name: Clone Proprietary Drivers
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
