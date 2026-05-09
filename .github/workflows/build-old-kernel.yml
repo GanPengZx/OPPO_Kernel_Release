@@ -80,7 +80,7 @@ jobs:
         sudo rm -rf kernel_source
         
     - name: Set up LLVM
-      uses: actions/setup-llvm@v4
+      uses: github/setup-llvm@v4
       with:
         version: '11'       
         
