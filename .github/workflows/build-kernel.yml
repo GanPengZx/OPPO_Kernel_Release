@@ -1,4 +1,4 @@
-name: 编译欧加新内核
+name: 编译OP内核(5.10+)
 
 on:
   workflow_dispatch:
