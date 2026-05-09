@@ -1,0 +1,40 @@
+name: 打包内核源码为 tar.gz (保留软链接)
+
+# 手动触发工作流
+on:
+  workflow_dispatch:
+    inputs:
+      repo_url:
+        description: '要克隆的 GitHub 仓库 HTTPS 地址'
+        required: true
+        default: 'https://github.com/oppo-source/android_kernel_oppo_sm6375.git'
+      branch:
+        description: '要打包的分支名称'
+        required: true
+        default: 'oppo/sm6375_t_13.1.0_oppo_a1_5g'
+
+# 云端运行环境（Linux，完美支持软链接+tar打包）
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 安装依赖
+        run: sudo apt update && sudo apt install -y git
+
+      - name: 高速克隆源码
+        run: |
+          # 浅克隆，只下载最新代码，速度极快
+          git clone --branch ${{ github.event.inputs.branch }} ${{ github.event.inputs.repo_url }} source_code
+
+      - name: 打包为 tar.gz
+        run: |
+          # 关键：tar 原生命令，完整保留内核软链接，编译无报错
+          tar -zcvf kernel_source.tar.gz -C source_code .
+
+      - name: 上传打包文件供下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-source-tar
+          path: kernel_source.tar.gz
