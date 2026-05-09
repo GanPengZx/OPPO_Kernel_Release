@@ -1,4 +1,4 @@
-name: Build New Kernel
+name: 编译欧加新内核
 
 on:
   workflow_dispatch:
