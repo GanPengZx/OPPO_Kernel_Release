@@ -31,19 +31,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: 安装依赖库
         run: |
           sudo apt update
           sudo apt install -y build-essential libssl-dev bc flex bison git zip unzip curl wget tar xz-utils cpio rsync lzop xz-utils zstd libncurses-dev libffi-dev libbz2-dev dnsutils net-tools lsb-release aria2 pigz llvm clang lld dwarves libelf-dev libssl-dev
-      - name: Set swap to 15G
+      - name: 将swap设置为15GB
         uses: pierotofy/set-swap-space@master
         with:
           swap-size-gb: 15
-      - name: Clone Proprietary Drivers
+      - name: 克隆驱动仓库源码
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.proprietary_branch }} \
             ${{ github.event.inputs.proprietary_repo }} proprietary_drivers
-      - name: Move Folders
+      - name: 移动文件
         run: |
           cd proprietary_drivers
           if [ -d "vendor" ]; then
@@ -58,11 +58,11 @@ jobs:
             ls -la
             exit 1
           fi
-      - name: Clone Kernel Source
+      - name: 克隆内核仓库源码
         run: |
           git clone --depth=1 --branch ${{ github.event.inputs.kernel_branch }} \
             ${{ github.event.inputs.kernel_repo }} kernel_source
-      - name: Prepare Directory Structure
+      - name: 准备编译内核
         run: |
           echo "Creating /kernel_platform/common..."
           sudo mkdir -p /kernel_platform/common
@@ -72,7 +72,7 @@ jobs:
           echo "Final structure:"
           ls -la /kernel_platform/
           ls -la /kernel_platform/common/
-      - name: Build Kernel
+      - name: 编译内核
         run: |
           sudo chown -R $USER:$USER /kernel_platform
           cd /kernel_platform/common
@@ -80,12 +80,14 @@ jobs:
           make ARCH=arm64 LLVM=1 O=out ${{ github.event.inputs.defconfig }}
           echo "Starting compilation..."
           make ARCH=arm64 LLVM=1 O=out -j$(nproc --all)
-      - name: Upload Kernel Image
+      - name: 上传内核文件
         uses: actions/upload-artifact@v4
         with:
           name: kernel-image
-          path: /kernel_platform/common/out/arch/arm64/boot/Image.gz
-      - name: Package AnyKernel3
+          path: |
+            /kernel_platform/common/out/arch/arm64/boot/Image.gz
+            /kernel_platform/common/out/arch/arm64/boot/Image
+      - name: 打包成AnyKernel3压缩包
         run: |
           echo "Cloning AnyKernel3..."
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AK3
@@ -101,7 +103,7 @@ jobs:
           cd AK3
           zip -r9 ../Kernel-AnyKernel3.zip *
           cd ..
-      - name: Upload AnyKernel3 Zip
+      - name: 上传AnyKernel3压缩包
         uses: actions/upload-artifact@v4
         with:
          name: kernel-anykernel3
