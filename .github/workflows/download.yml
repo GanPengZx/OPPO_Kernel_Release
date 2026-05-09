@@ -18,17 +18,15 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: 安装依赖
-        run: sudo apt update && sudo apt install -y git
-
-      - name: 高速克隆源码
+      - name: 克隆源码
         run: |
           git clone --branch ${{ github.event.inputs.branch }} ${{ github.event.inputs.repo_url }} source_code
-
+      - name: 删除.git目录
+        run: |
+          rm -rf source_code/.git
       - name: 打包为 tar.gz
         run: |
           tar -zcvf kernel_source.tar.gz -C source_code .
-
       - name: 上传打包文件供下载
         uses: actions/upload-artifact@v4
         with:
