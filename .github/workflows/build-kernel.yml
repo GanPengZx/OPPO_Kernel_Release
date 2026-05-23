@@ -1,4 +1,4 @@
-name: 编译OP内核(5.10+)
+name: 编译内核(ColorOS16)
 
 on:
   workflow_dispatch:
